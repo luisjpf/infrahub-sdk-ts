@@ -217,13 +217,13 @@ infrahub-sdk-ts/
 - [x] NodeStore
 
 ### Phase 2 — Enhanced Features
-- [ ] `filters()` with full filter support
-- [ ] `count()` operation
-- [ ] Relationship support (RelatedNode, RelationshipManager)
-- [ ] Pagination (automatic cursor-based)
-- [ ] `clone()` for branch-scoped clients
-- [ ] Batch operations
-- [ ] Query include/exclude fields
+- [x] `filters()` with full filter support
+- [x] `count()` operation
+- [x] Relationship support (RelatedNode, RelationshipManager)
+- [x] Pagination (automatic cursor-based)
+- [x] `clone()` for branch-scoped clients
+- [x] Batch operations
+- [x] Query include/exclude fields
 - [ ] Prefetch relationships
 
 ### Phase 3 — Advanced
