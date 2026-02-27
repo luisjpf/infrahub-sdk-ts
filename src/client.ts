@@ -1,3 +1,4 @@
+import { InfrahubBatch } from "./batch.js";
 import { BranchManager } from "./branch.js";
 import type { InfrahubConfig, InfrahubConfigInput } from "./config.js";
 import { createConfig } from "./config.js";
@@ -21,27 +22,6 @@ import type { HttpClient, Logger } from "./types.js";
  * and raw GraphQL execution.
  *
  * Mirrors the Python SDK's `InfrahubClient`.
- *
- * @example
- * ```ts
- * const client = new InfrahubClient({
- *   address: "http://localhost:8000",
- *   apiToken: "my-api-token",
- * });
- *
- * // Create a node
- * const device = await client.create("NetworkDevice", { hostname: { value: "router1" } });
- * await client.save(device);
- *
- * // Get a node by ID
- * const node = await client.get("NetworkDevice", { id: "some-uuid" });
- *
- * // List all nodes of a kind
- * const devices = await client.all("NetworkDevice");
- *
- * // Delete a node
- * await client.delete("NetworkDevice", "some-uuid");
- * ```
  */
 export class InfrahubClient {
   readonly config: InfrahubConfig;
@@ -70,6 +50,40 @@ export class InfrahubClient {
     this.schema = new SchemaManager(this.transport, this.defaultBranch);
     this.store = new NodeStore(this.defaultBranch);
     this.branch = new BranchManager(this.executeGraphQL.bind(this));
+  }
+
+  /**
+   * Return a cloned client scoped to a different branch.
+   * Shares the same config (except defaultBranch).
+   */
+  clone(branch?: string): InfrahubClient {
+    const configInput: InfrahubConfigInput = {
+      address: this.config.address,
+      apiToken: this.config.apiToken,
+      username: this.config.username,
+      password: this.config.password,
+      defaultBranch: branch ?? this.config.defaultBranch,
+      timeout: this.config.timeout,
+      paginationSize: this.config.paginationSize,
+      maxConcurrentExecution: this.config.maxConcurrentExecution,
+      retryOnFailure: this.config.retryOnFailure,
+      retryDelay: this.config.retryDelay,
+      maxRetryDuration: this.config.maxRetryDuration,
+    };
+    return new InfrahubClient(configInput);
+  }
+
+  /**
+   * Create a new batch for concurrent task execution.
+   */
+  createBatch(options?: {
+    maxConcurrentExecution?: number;
+    returnExceptions?: boolean;
+  }): InfrahubBatch {
+    return new InfrahubBatch({
+      maxConcurrentExecution: options?.maxConcurrentExecution ?? this.config.maxConcurrentExecution,
+      returnExceptions: options?.returnExceptions,
+    });
   }
 
   /**
@@ -167,7 +181,8 @@ export class InfrahubClient {
   }
 
   /**
-   * Retrieve all nodes of a given kind.
+   * Retrieve all nodes of a given kind with automatic pagination.
+   * If neither offset nor limit is provided, all pages are fetched automatically.
    */
   async all(
     kind: string,
@@ -178,43 +193,147 @@ export class InfrahubClient {
       limit?: number;
       filters?: Record<string, unknown>;
       populateStore?: boolean;
+      includeRelationships?: boolean;
+      partialMatch?: boolean;
     } = {},
   ): Promise<InfrahubNode[]> {
-    const { branch, timeout, offset, limit, filters, populateStore = true } = options;
+    const {
+      branch, timeout, offset, limit, filters,
+      populateStore = true, includeRelationships, partialMatch,
+    } = options;
     const branchName = branch ?? this.defaultBranch;
     const schema = await this.schema.get(kind, branchName);
 
-    // Build a template node to generate the query
-    const templateNode = new InfrahubNode({ schema, branch: branchName });
-    const queryDict = templateNode.generateQueryData({ filters, offset, limit });
-    const query = new GraphQLQuery({ query: queryDict });
+    // If explicit offset/limit supplied, do a single-page fetch
+    if (offset !== undefined || limit !== undefined) {
+      return this.fetchPage(schema, branchName, {
+        filters, offset, limit, timeout, populateStore,
+        includeRelationships, partialMatch,
+      });
+    }
+
+    // Automatic pagination: fetch all pages
+    const paginationSize = this.config.paginationSize;
+    const allNodes: InfrahubNode[] = [];
+    let pageNumber = 0;
+    let hasMore = true;
+
+    while (hasMore) {
+      const pageOffset = pageNumber * paginationSize;
+      const pageNodes = await this.fetchPage(schema, branchName, {
+        filters,
+        offset: pageOffset,
+        limit: paginationSize,
+        timeout,
+        populateStore,
+        includeRelationships,
+        partialMatch,
+        returnCount: true,
+      });
+
+      allNodes.push(...pageNodes);
+
+      // Check if there are more pages
+      if (pageNodes.length < paginationSize) {
+        hasMore = false;
+      } else {
+        pageNumber++;
+      }
+    }
+
+    return allNodes;
+  }
+
+  /**
+   * Query nodes with the full filter DSL.
+   * Filters are passed as keyword-style arguments mirroring the Python SDK.
+   *
+   * @example
+   * ```ts
+   * const results = await client.filters("TestPerson", {
+   *   name__value: "John",
+   *   status__values: ["active", "pending"],
+   *   partialMatch: true,
+   * });
+   * ```
+   */
+  async filters(
+    kind: string,
+    options: {
+      branch?: string;
+      timeout?: number;
+      offset?: number;
+      limit?: number;
+      populateStore?: boolean;
+      partialMatch?: boolean;
+      includeRelationships?: boolean;
+      [key: string]: unknown;
+    } = {},
+  ): Promise<InfrahubNode[]> {
+    const {
+      branch, timeout, offset, limit, populateStore = true,
+      partialMatch, includeRelationships,
+      ...filterArgs
+    } = options;
+    const branchName = branch ?? this.defaultBranch;
+
+    const filters: Record<string, unknown> = { ...filterArgs };
+
+    return this.all(kind, {
+      branch: branchName,
+      timeout,
+      offset,
+      limit,
+      filters,
+      populateStore,
+      partialMatch,
+      includeRelationships,
+    });
+  }
+
+  /**
+   * Return the count of nodes of a given kind, optionally filtered.
+   */
+  async count(
+    kind: string,
+    options: {
+      branch?: string;
+      timeout?: number;
+      partialMatch?: boolean;
+      [key: string]: unknown;
+    } = {},
+  ): Promise<number> {
+    const { branch, timeout, partialMatch, ...filterArgs } = options;
+    const branchName = branch ?? this.defaultBranch;
+    const schema = await this.schema.get(kind, branchName);
+
+    const filters: Record<string, unknown> = { ...filterArgs };
+    if (partialMatch) {
+      filters["partial_match"] = true;
+    }
+
+    const queryData: Record<string, unknown> = {
+      count: null,
+    };
+
+    if (Object.keys(filters).length > 0) {
+      queryData["@filters"] = filters;
+    }
+
+    const query = new GraphQLQuery({
+      query: { [schema.kind]: queryData },
+    });
 
     const response = await this.executeGraphQL(
       query.render(),
       undefined,
-      `query-${kind.toLowerCase()}-all`,
+      `query-${kind.toLowerCase()}-count`,
       branchName,
       timeout,
     );
 
-    const nodes: InfrahubNode[] = [];
     const kindData = response[schema.kind] as Record<string, unknown> | undefined;
-    const edges = (kindData?.edges ?? []) as Array<Record<string, unknown>>;
-
-    for (const edge of edges) {
-      const node = new InfrahubNode({
-        schema,
-        branch: branchName,
-        data: edge,
-      });
-      nodes.push(node);
-
-      if (populateStore) {
-        this.store.set(node);
-      }
-    }
-
-    return nodes;
+    return (kindData?.count as number) ?? 0;
   }
 
   /**
@@ -304,6 +423,60 @@ export class InfrahubClient {
     const response = await this.executeGraphQL("query { InfrahubInfo { version } }");
     const info = response.InfrahubInfo as Record<string, string> | undefined;
     return info?.version ?? "";
+  }
+
+  /** Fetch a single page of nodes. */
+  private async fetchPage(
+    schema: { kind: string; attributes: unknown[]; relationships: unknown[] },
+    branchName: string,
+    options: {
+      filters?: Record<string, unknown>;
+      offset?: number;
+      limit?: number;
+      timeout?: number;
+      populateStore?: boolean;
+      includeRelationships?: boolean;
+      partialMatch?: boolean;
+      returnCount?: boolean;
+    },
+  ): Promise<InfrahubNode[]> {
+    const { filters, offset, limit, timeout, populateStore = true, includeRelationships, partialMatch } = options;
+
+    const templateNode = new InfrahubNode({
+      schema: schema as import("./schema/types.js").SchemaType,
+      branch: branchName,
+    });
+    const queryDict = templateNode.generateQueryData({
+      filters, offset, limit, includeRelationships, partialMatch,
+    });
+    const query = new GraphQLQuery({ query: queryDict });
+
+    const response = await this.executeGraphQL(
+      query.render(),
+      undefined,
+      `query-${schema.kind.toLowerCase()}-page`,
+      branchName,
+      timeout,
+    );
+
+    const nodes: InfrahubNode[] = [];
+    const kindData = response[schema.kind] as Record<string, unknown> | undefined;
+    const edges = (kindData?.edges ?? []) as Array<Record<string, unknown>>;
+
+    for (const edge of edges) {
+      const node = new InfrahubNode({
+        schema: schema as import("./schema/types.js").SchemaType,
+        branch: branchName,
+        data: edge,
+      });
+      nodes.push(node);
+
+      if (populateStore) {
+        this.store.set(node);
+      }
+    }
+
+    return nodes;
   }
 
   /** Create a node on the server. */

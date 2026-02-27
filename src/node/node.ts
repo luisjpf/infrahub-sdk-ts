@@ -1,6 +1,8 @@
 import type { SchemaType } from "../schema/types.js";
 import { getRelationshipByName, isNodeSchema } from "../schema/types.js";
 import { Attribute } from "./attribute.js";
+import { RelatedNode } from "./related-node.js";
+import { RelationshipManager } from "./relationship-manager.js";
 
 /**
  * Represents an Infrahub node instance.
@@ -31,10 +33,10 @@ export class InfrahubNode {
   private readonly _attributes: Map<string, Attribute> = new Map();
 
   /** Relationship data for cardinality-one, keyed by name. */
-  private readonly _relationshipsOne: Map<string, RelatedNodeData> = new Map();
+  private readonly _relationshipsOne: Map<string, RelatedNode> = new Map();
 
   /** Relationship data for cardinality-many, keyed by name. */
-  private readonly _relationshipsMany: Map<string, RelatedNodeData[]> = new Map();
+  private readonly _relationshipsMany: Map<string, RelationshipManager> = new Map();
 
   constructor(options: {
     schema: SchemaType;
@@ -99,14 +101,49 @@ export class InfrahubNode {
     return this._attributes.has(name);
   }
 
-  /** Get a cardinality-one related node reference. */
-  getRelatedNode(name: string): RelatedNodeData | undefined {
+  /** Get a cardinality-one RelatedNode. */
+  getRelatedNode(name: string): RelatedNode | undefined {
     return this._relationshipsOne.get(name);
   }
 
-  /** Get cardinality-many related nodes. */
-  getRelatedNodes(name: string): RelatedNodeData[] {
-    return this._relationshipsMany.get(name) ?? [];
+  /** Get cardinality-many RelationshipManager. */
+  getRelationshipManager(name: string): RelationshipManager | undefined {
+    return this._relationshipsMany.get(name);
+  }
+
+  /**
+   * Get HFID (human-friendly ID) components from this node.
+   * Returns null if schema doesn't define hfid or values aren't available.
+   */
+  getHumanFriendlyId(): string[] | null {
+    if (!isNodeSchema(this.schema) || !this.schema.human_friendly_id) {
+      return null;
+    }
+
+    const components: string[] = [];
+    for (const path of this.schema.human_friendly_id) {
+      // Simple case: attribute value reference like "name__value"
+      const parts = path.split("__");
+      if (parts.length >= 1) {
+        const attrName = parts[0]!;
+        if (this._attributes.has(attrName)) {
+          const value = this._attributes.get(attrName)!.value;
+          if (value === null || value === undefined) return null;
+          components.push(String(value));
+        } else {
+          return null;
+        }
+      }
+    }
+
+    return components.length > 0 ? components : null;
+  }
+
+  /** HFID as string with kind prefix (e.g., "InfraDevice__router1"). */
+  get hfidStr(): string | null {
+    const hfid = this.getHumanFriendlyId();
+    if (!hfid) return null;
+    return `${this.kind}__${hfid.join("__")}`;
   }
 
   /**
@@ -130,22 +167,24 @@ export class InfrahubNode {
     for (const [name, rel] of this._relationshipsOne) {
       const relSchema = getRelationshipByName(this.schema, name);
       if (!relSchema || relSchema.read_only) continue;
-      if (rel.id) {
-        data[name] = { id: rel.id };
-      } else if (rel.hfid) {
-        data[name] = { hfid: rel.hfid };
+      if (excludeUnmodified && !rel.hasUpdate) continue;
+
+      const relData = rel.generateInputData();
+      if (relData !== null) {
+        data[name] = relData;
       }
     }
 
     // Relationships (cardinality many)
-    for (const [name, rels] of this._relationshipsMany) {
+    for (const [name, relMgr] of this._relationshipsMany) {
       const relSchema = getRelationshipByName(this.schema, name);
       if (!relSchema || relSchema.read_only) continue;
-      data[name] = rels.map((r) => {
-        if (r.id) return { id: r.id };
-        if (r.hfid) return { hfid: r.hfid };
-        return {};
-      });
+      if (excludeUnmodified && !relMgr.hasUpdate) continue;
+
+      const relData = relMgr.generateInputData();
+      if (relData.length > 0) {
+        data[name] = relData;
+      }
     }
 
     // Add id for existing nodes (updates)
@@ -166,8 +205,10 @@ export class InfrahubNode {
     offset?: number;
     limit?: number;
     includeProperties?: boolean;
+    includeRelationships?: boolean;
+    partialMatch?: boolean;
   } = {}): Record<string, unknown> {
-    const { filters, offset, limit, includeProperties } = options;
+    const { filters, offset, limit, includeProperties, includeRelationships, partialMatch } = options;
 
     const nodeFields: Record<string, unknown> = {
       id: null,
@@ -188,22 +229,23 @@ export class InfrahubNode {
       }
     }
 
-    // Add relationship fields (only cardinality-one by default)
+    // Add relationship fields
     for (const relSchema of this.schema.relationships) {
       if (relSchema.cardinality === "one") {
-        nodeFields[relSchema.name] = {
-          node: {
-            id: null,
-            display_label: null,
-            __typename: null,
-          },
-        };
+        nodeFields[relSchema.name] = RelatedNode.generateQueryData({
+          includeProperties,
+        });
+      } else if (includeRelationships) {
+        nodeFields[relSchema.name] = RelationshipManager.generateQueryData({
+          includeProperties,
+        });
       }
     }
 
     const queryFilters: Record<string, unknown> = { ...(filters ?? {}) };
     if (offset !== undefined) queryFilters["offset"] = offset;
     if (limit !== undefined) queryFilters["limit"] = limit;
+    if (partialMatch) queryFilters["partial_match"] = true;
 
     const data: Record<string, unknown> = {
       count: null,
@@ -236,75 +278,27 @@ export class InfrahubNode {
       if (relSchema.cardinality === "one") {
         this._relationshipsOne.set(
           relSchema.name,
-          parseRelatedNodeData(relData),
+          new RelatedNode({
+            schema: relSchema,
+            branch: this.branch,
+            data: relData,
+          }),
         );
       } else {
         this._relationshipsMany.set(
           relSchema.name,
-          parseRelatedNodesData(relData),
+          new RelationshipManager({
+            schema: relSchema,
+            branch: this.branch,
+            data: relData,
+          }),
         );
       }
     }
   }
 }
 
-/** Lightweight representation of a related node (id/hfid/typename). */
-export interface RelatedNodeData {
-  id: string | null;
-  hfid: string[] | null;
-  typename: string | null;
-  displayLabel: string | null;
-}
-
 /** Data structure for mutation input. */
 export interface MutationInputData {
   data: Record<string, unknown>;
-}
-
-/** Parse related node data from GraphQL response. */
-function parseRelatedNodeData(data: unknown): RelatedNodeData {
-  if (data === null || data === undefined) {
-    return { id: null, hfid: null, typename: null, displayLabel: null };
-  }
-
-  // If data is a string, treat as id
-  if (typeof data === "string") {
-    return { id: data, hfid: null, typename: null, displayLabel: null };
-  }
-
-  if (typeof data === "object") {
-    const d = data as Record<string, unknown>;
-    // Handle { node: { id, ... } } wrapper
-    const nodeData = (typeof d.node === "object" && d.node !== null ? d.node : d) as Record<string, unknown>;
-    return {
-      id: (nodeData.id as string) ?? null,
-      hfid: (nodeData.hfid as string[]) ?? null,
-      typename: (nodeData.__typename as string) ?? null,
-      displayLabel: (nodeData.display_label as string) ?? null,
-    };
-  }
-
-  return { id: null, hfid: null, typename: null, displayLabel: null };
-}
-
-/** Parse cardinality-many relationship data. */
-function parseRelatedNodesData(data: unknown): RelatedNodeData[] {
-  if (data === null || data === undefined) {
-    return [];
-  }
-
-  // Handle { edges: [{ node: { ... } }, ...] } format
-  if (typeof data === "object" && "edges" in (data as Record<string, unknown>)) {
-    const edges = (data as Record<string, unknown>).edges as unknown[];
-    if (Array.isArray(edges)) {
-      return edges.map(parseRelatedNodeData);
-    }
-  }
-
-  // Handle direct array
-  if (Array.isArray(data)) {
-    return data.map(parseRelatedNodeData);
-  }
-
-  return [];
 }

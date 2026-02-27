@@ -139,10 +139,11 @@ describe("InfrahubNode", () => {
           },
         },
       });
-      const interfaces = node.getRelatedNodes("interfaces");
-      expect(interfaces).toHaveLength(2);
-      expect(interfaces[0]?.id).toBe("intf-1");
-      expect(interfaces[1]?.id).toBe("intf-2");
+      const interfaces = node.getRelationshipManager("interfaces");
+      expect(interfaces).toBeDefined();
+      expect(interfaces!.peers).toHaveLength(2);
+      expect(interfaces!.peers[0]?.id).toBe("intf-1");
+      expect(interfaces!.peers[1]?.id).toBe("intf-2");
     });
   });
 
@@ -278,9 +279,177 @@ describe("InfrahubNode", () => {
       const site = nodeFields.site as Record<string, unknown>;
       expect(site.node).toEqual({
         id: null,
+        hfid: null,
         display_label: null,
         __typename: null,
       });
+    });
+
+    it("should include cardinality-many relationships when includeRelationships is true", () => {
+      const node = new InfrahubNode({
+        schema: deviceSchema,
+        branch: "main",
+      });
+      const queryData = node.generateQueryData({ includeRelationships: true });
+      const deviceNode = queryData.InfraDevice as Record<string, unknown>;
+      const edges = deviceNode.edges as Record<string, unknown>;
+      const nodeFields = edges.node as Record<string, unknown>;
+
+      // interfaces/tags are cardinality=many, should be included
+      expect(nodeFields).toHaveProperty("interfaces");
+      const interfaces = nodeFields.interfaces as Record<string, unknown>;
+      expect(interfaces).toHaveProperty("count", null);
+      expect(interfaces).toHaveProperty("edges");
+    });
+
+    it("should not include cardinality-many relationships by default", () => {
+      const node = new InfrahubNode({
+        schema: deviceSchema,
+        branch: "main",
+      });
+      const queryData = node.generateQueryData();
+      const deviceNode = queryData.InfraDevice as Record<string, unknown>;
+      const edges = deviceNode.edges as Record<string, unknown>;
+      const nodeFields = edges.node as Record<string, unknown>;
+
+      expect(nodeFields).not.toHaveProperty("interfaces");
+      expect(nodeFields).not.toHaveProperty("tags");
+    });
+
+    it("should include partial_match filter", () => {
+      const schema = createSimpleSchema("TestNode");
+      const node = new InfrahubNode({ schema, branch: "main" });
+      const queryData = node.generateQueryData({
+        filters: { name__value: "test" },
+        partialMatch: true,
+      });
+
+      const testNode = queryData.TestNode as Record<string, unknown>;
+      const filters = testNode["@filters"] as Record<string, unknown>;
+      expect(filters.partial_match).toBe(true);
+      expect(filters.name__value).toBe("test");
+    });
+  });
+
+  describe("HFID", () => {
+    it("should return HFID components from attributes", () => {
+      const node = new InfrahubNode({
+        schema: deviceSchema,
+        branch: "main",
+        data: { name: { value: "router1" } },
+      });
+      const hfid = node.getHumanFriendlyId();
+      expect(hfid).toEqual(["router1"]);
+    });
+
+    it("should return hfidStr with kind prefix", () => {
+      const node = new InfrahubNode({
+        schema: deviceSchema,
+        branch: "main",
+        data: { name: { value: "router1" } },
+      });
+      expect(node.hfidStr).toBe("InfraDevice__router1");
+    });
+
+    it("should return null when attribute value is missing", () => {
+      const node = new InfrahubNode({
+        schema: deviceSchema,
+        branch: "main",
+      });
+      // name has no value (undefined)
+      expect(node.getHumanFriendlyId()).toBeNull();
+      expect(node.hfidStr).toBeNull();
+    });
+
+    it("should return null for schemas without human_friendly_id", () => {
+      const node = new InfrahubNode({
+        schema: siteSchema,
+        branch: "main",
+        data: { name: { value: "NYC" } },
+      });
+      // siteSchema doesn't have human_friendly_id defined
+      expect(node.getHumanFriendlyId()).toBeNull();
+    });
+  });
+
+  describe("generateInputData with RelatedNode/RelationshipManager", () => {
+    it("should exclude unmodified relationships when excludeUnmodified is true", () => {
+      const node = new InfrahubNode({
+        schema: deviceSchema,
+        branch: "main",
+        data: {
+          id: "device-1",
+          name: { value: "router1" },
+          site: { node: { id: "site-1" } },
+        },
+      });
+
+      // Nothing was modified
+      const input = node.generateInputData(true);
+      const data = (input.data as Record<string, unknown>).data as Record<string, unknown>;
+      // site was not modified, should not be present
+      expect(data.site).toBeUndefined();
+    });
+
+    it("should include modified relationships when excludeUnmodified is true", () => {
+      const node = new InfrahubNode({
+        schema: deviceSchema,
+        branch: "main",
+        data: {
+          id: "device-1",
+          name: { value: "router1" },
+          site: { node: { id: "site-1" } },
+        },
+      });
+
+      // Modify the site relationship
+      const site = node.getRelatedNode("site")!;
+      site.id = "site-2";
+
+      const input = node.generateInputData(true);
+      const data = (input.data as Record<string, unknown>).data as Record<string, unknown>;
+      expect(data.site).toEqual({ id: "site-2" });
+    });
+
+    it("should include cardinality-many relationship data in mutations", () => {
+      const node = new InfrahubNode({
+        schema: deviceSchema,
+        branch: "main",
+        data: {
+          name: { value: "router1" },
+          interfaces: {
+            edges: [
+              { node: { id: "intf-1" } },
+              { node: { id: "intf-2" } },
+            ],
+          },
+        },
+      });
+
+      const input = node.generateInputData();
+      const data = (input.data as Record<string, unknown>).data as Record<string, unknown>;
+      expect(data.interfaces).toEqual([{ id: "intf-1" }, { id: "intf-2" }]);
+    });
+
+    it("should reflect add/remove on RelationshipManager in mutations", () => {
+      const node = new InfrahubNode({
+        schema: deviceSchema,
+        branch: "main",
+        data: {
+          name: { value: "router1" },
+          interfaces: {
+            edges: [{ node: { id: "intf-1" } }],
+          },
+        },
+      });
+
+      const mgr = node.getRelationshipManager("interfaces")!;
+      mgr.add("intf-2");
+      mgr.remove("intf-1");
+
+      const input = node.generateInputData();
+      const data = (input.data as Record<string, unknown>).data as Record<string, unknown>;
+      expect(data.interfaces).toEqual([{ id: "intf-2" }]);
     });
   });
 });
