@@ -1,5 +1,13 @@
 export { SchemaManager } from "./manager.js";
 export type {
+  SchemaLoadResponse,
+  SchemaWarning,
+  SchemaWarningKind,
+  SchemaCheckResponse,
+  SchemaExport,
+  NamespaceExport,
+} from "./manager.js";
+export type {
   AttributeKind,
   AttributeSchema,
   GenericSchema,

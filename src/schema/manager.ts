@@ -1,4 +1,4 @@
-import { SchemaNotFoundError } from "../errors.js";
+import { SchemaNotFoundError, ValidationError } from "../errors.js";
 import type { InfrahubTransport } from "../transport.js";
 import type { GenericSchema, NodeSchema, SchemaType } from "./types.js";
 
@@ -7,6 +7,52 @@ interface SchemaAPIResponse {
   nodes: NodeSchema[];
   generics: GenericSchema[];
 }
+
+/** Response from /api/schema/load */
+export interface SchemaLoadResponse {
+  hash: string;
+  previous_hash: string;
+  errors: Record<string, unknown>;
+  warnings: SchemaWarning[];
+  schema_updated: boolean;
+}
+
+/** Warning from schema load/check */
+export interface SchemaWarning {
+  type: string;
+  kinds: SchemaWarningKind[];
+  message: string;
+}
+
+/** Kind reference in a schema warning */
+export interface SchemaWarningKind {
+  kind: string;
+  field?: string;
+}
+
+/** Response from /api/schema/check */
+export interface SchemaCheckResponse {
+  valid: boolean;
+  diff: Record<string, unknown>;
+  errors: Record<string, unknown>;
+}
+
+/** Exported schema organized by namespace */
+export interface SchemaExport {
+  namespaces: Record<string, NamespaceExport>;
+}
+
+/** Single namespace in a schema export */
+export interface NamespaceExport {
+  nodes: NodeSchema[];
+  generics: GenericSchema[];
+}
+
+/** Namespaces excluded from export by default (internal system namespaces). */
+const RESTRICTED_NAMESPACES = new Set([
+  "Account", "Branch", "Builtin", "Core", "Deprecated", "Diff",
+  "Infrahub", "Internal", "Lineage", "Schema", "Profile", "Template",
+]);
 
 /**
  * SchemaManager — fetches, caches, and provides schema definitions.
@@ -113,4 +159,160 @@ export class SchemaManager {
     const branchName = branch ?? this.defaultBranch;
     return this.cache.get(branchName)?.has(kind) ?? false;
   }
+
+  /**
+   * Load schemas into the Infrahub server.
+   * This sends schema definitions to the server for registration.
+   *
+   * @param schemas - Array of schema definition objects to load
+   * @param branch - Target branch (defaults to defaultBranch)
+   * @returns SchemaLoadResponse with hash info and any warnings/errors
+   */
+  async load(
+    schemas: Record<string, unknown>[],
+    branch?: string,
+  ): Promise<SchemaLoadResponse> {
+    if (schemas.length === 0) {
+      throw new ValidationError("schemas", "At least one schema must be provided");
+    }
+
+    const branchName = branch ?? this.defaultBranch;
+    const url = `${this.buildBaseUrl()}/api/schema/load?branch=${encodeURIComponent(branchName)}`;
+
+    // Schema loads can take a while — enforce a 2-minute minimum timeout
+    const response = await this.transport.post(
+      url,
+      { schemas },
+      undefined,
+      Math.max(120, 60),
+    );
+
+    if (response.status === 401 || response.status === 403) {
+      throw new ValidationError("schemas", "Not authorized to load schemas");
+    }
+
+    const data = response.data as Record<string, unknown>;
+
+    if (response.status === 422 || response.status === 400) {
+      return {
+        hash: "",
+        previous_hash: "",
+        errors: data,
+        warnings: [],
+        schema_updated: false,
+      };
+    }
+
+    // Invalidate cache for this branch since schema may have changed
+    this.clearCache(branchName);
+
+    const hash = (data.hash as string) ?? "";
+    const previousHash = (data.previous_hash as string) ?? "";
+    const warnings = (data.warnings as SchemaWarning[]) ?? [];
+
+    return {
+      hash,
+      previous_hash: previousHash,
+      errors: {},
+      warnings,
+      schema_updated: hash !== previousHash,
+    };
+  }
+
+  /**
+   * Check schemas against the server without loading them.
+   * Returns whether the schemas are valid and any diff/error details.
+   *
+   * @param schemas - Array of schema definition objects to validate
+   * @param branch - Target branch (defaults to defaultBranch)
+   * @returns Tuple of [isValid, responseData]
+   */
+  async check(
+    schemas: Record<string, unknown>[],
+    branch?: string,
+  ): Promise<[boolean, Record<string, unknown> | null]> {
+    if (schemas.length === 0) {
+      throw new ValidationError("schemas", "At least one schema must be provided");
+    }
+
+    const branchName = branch ?? this.defaultBranch;
+    const url = `${this.buildBaseUrl()}/api/schema/check?branch=${encodeURIComponent(branchName)}`;
+
+    const response = await this.transport.post(
+      url,
+      { schemas },
+      undefined,
+      Math.max(120, 60),
+    );
+
+    const data = response.data as Record<string, unknown> | null;
+
+    if (response.status === 202) {
+      return [true, data];
+    }
+
+    if (response.status === 422) {
+      return [false, data];
+    }
+
+    return [false, null];
+  }
+
+  /**
+   * Export user-defined schemas, organized by namespace.
+   * Excludes internal/system namespaces by default.
+   *
+   * @param branch - Branch to export from (defaults to defaultBranch)
+   * @param namespaces - Optional list of specific namespaces to include
+   * @returns SchemaExport object organized by namespace
+   */
+  async export(branch?: string, namespaces?: string[]): Promise<SchemaExport> {
+    const branchName = branch ?? this.defaultBranch;
+
+    // Ensure schemas are fetched
+    await this.fetchAll(branchName);
+
+    const branchCache = this.cache.get(branchName) ?? new Map<string, SchemaType>();
+    const result: SchemaExport = { namespaces: {} };
+
+    for (const schema of branchCache.values()) {
+      const ns = schema.namespace;
+
+      // Filter by requested namespaces if provided
+      if (namespaces && namespaces.length > 0) {
+        if (!namespaces.includes(ns)) {
+          continue;
+        }
+      } else {
+        // Exclude restricted namespaces by default
+        if (RESTRICTED_NAMESPACES.has(ns)) {
+          continue;
+        }
+      }
+
+      if (!result.namespaces[ns]) {
+        result.namespaces[ns] = { nodes: [], generics: [] };
+      }
+
+      const nsExport = result.namespaces[ns]!;
+
+      if (isNodeSchemaType(schema)) {
+        nsExport.nodes.push(schema);
+      } else {
+        nsExport.generics.push(schema as GenericSchema);
+      }
+    }
+
+    return result;
+  }
+
+  /** Build the base API URL (without /graphql). */
+  private buildBaseUrl(): string {
+    return this.transport.buildGraphQLUrl().replace(/\/graphql$/, "");
+  }
+}
+
+/** Type guard: does this schema have NodeSchema-specific fields? */
+function isNodeSchemaType(schema: SchemaType): schema is NodeSchema {
+  return "inherit_from" in schema || "default_filter" in schema || "hierarchy" in schema;
 }
