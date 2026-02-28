@@ -89,6 +89,9 @@ export class InfrahubClient {
       retryBackoff: this.config.retryBackoff,
       retryMaxDelay: this.config.retryMaxDelay,
       retryJitter: this.config.retryJitter,
+      proxyUrl: this.config.proxyUrl,
+      tlsInsecure: this.config.tlsInsecure,
+      tlsCaFile: this.config.tlsCaFile,
     };
     return new InfrahubClient(configInput);
   }

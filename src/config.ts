@@ -23,6 +23,9 @@ export const InfrahubConfigSchema = z
     retryBackoff: z.enum(["constant", "exponential"]).default("constant"),
     retryMaxDelay: z.number().int().positive().default(60),
     retryJitter: z.boolean().default(true),
+    proxyUrl: z.string().url().optional(),
+    tlsInsecure: z.boolean().default(false),
+    tlsCaFile: z.string().optional(),
   })
   .refine(
     (data) => {
