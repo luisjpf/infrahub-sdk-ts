@@ -9,6 +9,12 @@ import {
   URLNotFoundError,
 } from "./errors.js";
 import { GraphQLMutation, GraphQLQuery } from "./graphql/query.js";
+import type { IPAddressAllocationOptions, IPAllocationResult, IPPrefixAllocationOptions } from "./ip-pool.js";
+import {
+  buildIPAddressAllocationMutation,
+  buildIPPrefixAllocationMutation,
+  parseAllocationResponse,
+} from "./ip-pool.js";
 import { InfrahubNode } from "./node/node.js";
 import { ObjectStore } from "./object-store.js";
 import { SchemaManager } from "./schema/manager.js";
@@ -426,6 +432,54 @@ export class InfrahubClient {
     const response = await this.executeGraphQL("query { InfrahubInfo { version } }");
     const info = response.InfrahubInfo as Record<string, string> | undefined;
     return info?.version ?? "";
+  }
+
+  /**
+   * Allocate the next available IP address from a pool.
+   *
+   * @param options - Allocation options including the pool ID
+   * @param branch - Target branch (defaults to defaultBranch)
+   * @param timeout - Optional request timeout in seconds
+   * @returns Allocation result with the assigned node info
+   */
+  async allocateNextIpAddress(
+    options: IPAddressAllocationOptions,
+    branch?: string,
+    timeout?: number,
+  ): Promise<IPAllocationResult> {
+    const mutation = buildIPAddressAllocationMutation(options);
+    const response = await this.executeGraphQL(
+      mutation.render(),
+      undefined,
+      "mutation-ip-address-pool-allocate",
+      branch ?? this.defaultBranch,
+      timeout,
+    );
+    return parseAllocationResponse(response, "InfrahubIPAddressPoolGetResource");
+  }
+
+  /**
+   * Allocate the next available IP prefix from a pool.
+   *
+   * @param options - Allocation options including the pool ID
+   * @param branch - Target branch (defaults to defaultBranch)
+   * @param timeout - Optional request timeout in seconds
+   * @returns Allocation result with the assigned node info
+   */
+  async allocateNextIpPrefix(
+    options: IPPrefixAllocationOptions,
+    branch?: string,
+    timeout?: number,
+  ): Promise<IPAllocationResult> {
+    const mutation = buildIPPrefixAllocationMutation(options);
+    const response = await this.executeGraphQL(
+      mutation.render(),
+      undefined,
+      "mutation-ip-prefix-pool-allocate",
+      branch ?? this.defaultBranch,
+      timeout,
+    );
+    return parseAllocationResponse(response, "InfrahubIPPrefixPoolGetResource");
   }
 
   /** Fetch a single page of nodes. */
