@@ -1,0 +1,41 @@
+{
+  "version": "1.0",
+  "nodes": [
+    {
+      "name": "Device",
+      "namespace": "Testing",
+      "attributes": [
+        { "name": "name", "kind": "Text", "unique": true },
+        { "name": "description", "kind": "Text", "optional": true },
+        { "name": "role", "kind": "Text", "optional": true }
+      ],
+      "relationships": [
+        {
+          "name": "interfaces",
+          "peer": "TestingInterface",
+          "kind": "Component",
+          "cardinality": "many",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "name": "Interface",
+      "namespace": "Testing",
+      "attributes": [
+        { "name": "name", "kind": "Text" },
+        { "name": "speed", "kind": "Number", "optional": true },
+        { "name": "enabled", "kind": "Boolean", "optional": true }
+      ],
+      "relationships": [
+        {
+          "name": "device",
+          "peer": "TestingDevice",
+          "kind": "Parent",
+          "cardinality": "one",
+          "optional": false
+        }
+      ]
+    }
+  ]
+}
