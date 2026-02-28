@@ -9,6 +9,8 @@ import {
   URLNotFoundError,
 } from "./errors.js";
 import { GraphQLMutation, GraphQLQuery } from "./graphql/query.js";
+import type { ClientMode, GroupContextProperties } from "./group-context.js";
+import { InfrahubGroupContext } from "./group-context.js";
 import type { IPAddressAllocationOptions, IPAllocationResult, IPPrefixAllocationOptions } from "./ip-pool.js";
 import {
   buildIPAddressAllocationMutation,
@@ -39,6 +41,11 @@ export class InfrahubClient {
   readonly objectStore: ObjectStore;
   readonly defaultBranch: string;
 
+  /** Current client mode — "default" or "tracking" */
+  mode: ClientMode = "default";
+  /** Group context for tracking mode */
+  readonly groupContext: InfrahubGroupContext;
+
   constructor(
     config?: InfrahubConfigInput,
     options?: {
@@ -59,6 +66,7 @@ export class InfrahubClient {
     this.store = new NodeStore(this.defaultBranch);
     this.branch = new BranchManager(this.executeGraphQL.bind(this));
     this.objectStore = new ObjectStore(this.transport);
+    this.groupContext = new InfrahubGroupContext();
   }
 
   /**
@@ -96,6 +104,37 @@ export class InfrahubClient {
   }
 
   /**
+   * Enter tracking mode. Node creates/saves will automatically register
+   * their IDs with the group context.
+   *
+   * @param props - Group context configuration
+   * @returns The group context (for manual interaction if needed)
+   */
+  startTracking(props: GroupContextProperties): InfrahubGroupContext {
+    this.mode = "tracking";
+    this.groupContext.reset();
+    this.groupContext.setProperties(props);
+    return this.groupContext;
+  }
+
+  /**
+   * Exit tracking mode and optionally finalize the group.
+   * If `updateGroup` is true (default), creates/updates the tracking group on the server.
+   *
+   * @param updateGroup - Whether to create/update the group before exiting (default: true)
+   * @param branch - Target branch for the group update
+   */
+  async stopTracking(updateGroup: boolean = true, branch?: string): Promise<void> {
+    if (this.mode === "tracking" && updateGroup) {
+      await this.groupContext.updateGroup(
+        this.executeGraphQL.bind(this),
+        branch ?? this.defaultBranch,
+      );
+    }
+    this.mode = "default";
+  }
+
+  /**
    * Authenticate with the server (username/password auth).
    * Not needed when using API token authentication.
    */
@@ -128,6 +167,11 @@ export class InfrahubClient {
       await this.createOnServer(node, timeout);
     }
     this.store.set(node);
+
+    // Track node ID in group context when in tracking mode
+    if (this.mode === "tracking" && node.id) {
+      this.groupContext.addRelatedNodes([node.id]);
+    }
   }
 
   /**
