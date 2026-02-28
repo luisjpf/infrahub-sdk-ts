@@ -10,6 +10,7 @@ import {
 } from "./errors.js";
 import { GraphQLMutation, GraphQLQuery } from "./graphql/query.js";
 import { InfrahubNode } from "./node/node.js";
+import { ObjectStore } from "./object-store.js";
 import { SchemaManager } from "./schema/manager.js";
 import { isNodeSchema } from "./schema/types.js";
 import { NodeStore } from "./store.js";
@@ -29,6 +30,7 @@ export class InfrahubClient {
   readonly schema: SchemaManager;
   readonly branch: BranchManager;
   readonly store: NodeStore;
+  readonly objectStore: ObjectStore;
   readonly defaultBranch: string;
 
   constructor(
@@ -50,6 +52,7 @@ export class InfrahubClient {
     this.schema = new SchemaManager(this.transport, this.defaultBranch);
     this.store = new NodeStore(this.defaultBranch);
     this.branch = new BranchManager(this.executeGraphQL.bind(this));
+    this.objectStore = new ObjectStore(this.transport);
   }
 
   /**
