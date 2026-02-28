@@ -5,10 +5,17 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "bin": {
+    "infrahub-sdk": "./dist/cli.js"
+  },
   "exports": {
     ".": {
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
+    },
+    "./codegen": {
+      "import": "./dist/codegen/index.js",
+      "types": "./dist/codegen/index.d.ts"
     }
   },
   "files": [
@@ -31,6 +38,7 @@
   "author": "Luis",
   "license": "MIT",
   "dependencies": {
+    "commander": "^14.0.3",
     "zod": "^3.24.0"
   },
   "devDependencies": {
