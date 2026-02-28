@@ -41,6 +41,12 @@ export type {
   RelationshipCardinality,
   RelationshipDirection,
   RelationshipKind,
+  SchemaLoadResponse,
+  SchemaWarning,
+  SchemaWarningKind,
+  SchemaCheckResponse,
+  SchemaExport,
+  NamespaceExport,
 } from "./schema/index.js";
 
 // Node
@@ -56,3 +62,33 @@ export { NodeStore } from "./store.js";
 
 // Batch
 export { InfrahubBatch } from "./batch.js";
+
+// Object Store
+export { ObjectStore } from "./object-store.js";
+
+// IP Pool Allocation
+export type { IPAllocationResult, IPAddressAllocationOptions, IPPrefixAllocationOptions } from "./ip-pool.js";
+export {
+  buildIPAddressAllocationMutation,
+  buildIPPrefixAllocationMutation,
+  parseAllocationResponse,
+} from "./ip-pool.js";
+
+// Group Context / Tracking Mode
+export { InfrahubGroupContext } from "./group-context.js";
+export type { ClientMode, GroupContextProperties, GraphQLExecutor } from "./group-context.js";
+
+// Recorder / Playback
+export {
+  NoRecorder,
+  JSONRecorder,
+  JSONPlayback,
+  RecordingHttpClient,
+  MemoryRecorderStorage,
+  generateRequestFilename,
+} from "./recorder.js";
+export type { Recorder, RecordedEntry, RecorderStorage } from "./recorder.js";
+
+// Proxy / TLS
+export { ProxyHttpClient } from "./proxy-client.js";
+export type { TlsProxyConfig } from "./proxy-client.js";

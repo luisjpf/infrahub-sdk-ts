@@ -121,10 +121,13 @@ export class ProxyHttpClient implements HttpClient {
    */
   private async createProxyDispatcher(): Promise<unknown | undefined> {
     try {
-      // Dynamic import — undici is bundled with Node 18+ but may not be directly importable
-      const undici = await import("undici");
-      if (undici.ProxyAgent && this.tlsProxyConfig.proxyUrl) {
-        return new undici.ProxyAgent(this.tlsProxyConfig.proxyUrl);
+      // Dynamic import — undici is bundled with Node 18+ but may not be directly importable.
+      // We use a variable to prevent TypeScript from resolving the module at compile time.
+      const moduleName = "undici";
+      const undici = await (import(moduleName) as Promise<Record<string, unknown>>);
+      const ProxyAgentCtor = undici.ProxyAgent as (new (url: string) => unknown) | undefined;
+      if (ProxyAgentCtor && this.tlsProxyConfig.proxyUrl) {
+        return new ProxyAgentCtor(this.tlsProxyConfig.proxyUrl);
       }
     } catch {
       // undici not available — fall through without proxy

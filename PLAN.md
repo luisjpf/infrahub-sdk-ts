@@ -227,14 +227,14 @@ infrahub-sdk-ts/
 - [ ] Prefetch relationships
 
 ### Phase 3 — Advanced
-- [ ] Tracking mode (group context)
-- [ ] Schema load/check/export
-- [ ] Object store
-- [ ] Request recording/playback for testing
-- [ ] Custom logger support
-- [ ] Retry with configurable backoff
-- [ ] TLS/proxy configuration
-- [ ] IP address/prefix pool allocation
+- [x] Tracking mode (group context)
+- [x] Schema load/check/export
+- [x] Object store
+- [x] Request recording/playback for testing
+- [x] Custom logger support
+- [x] Retry with configurable backoff
+- [x] TLS/proxy configuration
+- [x] IP address/prefix pool allocation
 
 ### Phase 4 — Developer Experience
 - [ ] Code generation from schema (typed node classes)
