@@ -188,4 +188,90 @@ describe("InfrahubTransport", () => {
       expect(handler).toHaveBeenCalledOnce();
     });
   });
+
+  describe("computeRetryDelay", () => {
+    it("should return constant delay for constant backoff", () => {
+      const config = createConfig({
+        retryBackoff: "constant",
+        retryDelay: 5,
+        retryJitter: false,
+      });
+      const transport = new InfrahubTransport(config, createMockHttpClient(vi.fn()));
+
+      expect(transport.computeRetryDelay(0)).toBe(5000);
+      expect(transport.computeRetryDelay(1)).toBe(5000);
+      expect(transport.computeRetryDelay(5)).toBe(5000);
+    });
+
+    it("should double delay each attempt for exponential backoff", () => {
+      const config = createConfig({
+        retryBackoff: "exponential",
+        retryDelay: 1,
+        retryMaxDelay: 120,
+        retryJitter: false,
+      });
+      const transport = new InfrahubTransport(config, createMockHttpClient(vi.fn()));
+
+      expect(transport.computeRetryDelay(0)).toBe(1000);   // 1s * 2^0
+      expect(transport.computeRetryDelay(1)).toBe(2000);   // 1s * 2^1
+      expect(transport.computeRetryDelay(2)).toBe(4000);   // 1s * 2^2
+      expect(transport.computeRetryDelay(3)).toBe(8000);   // 1s * 2^3
+      expect(transport.computeRetryDelay(10)).toBe(120000); // capped at maxDelay
+    });
+
+    it("should cap at retryMaxDelay", () => {
+      const config = createConfig({
+        retryBackoff: "exponential",
+        retryDelay: 5,
+        retryMaxDelay: 30,
+        retryJitter: false,
+      });
+      const transport = new InfrahubTransport(config, createMockHttpClient(vi.fn()));
+
+      // 5 * 2^3 = 40, but capped at 30
+      expect(transport.computeRetryDelay(3)).toBe(30000);
+    });
+
+    it("should add jitter when enabled", () => {
+      const config = createConfig({
+        retryBackoff: "constant",
+        retryDelay: 10,
+        retryJitter: true,
+      });
+      const transport = new InfrahubTransport(config, createMockHttpClient(vi.fn()));
+
+      // Run multiple times and check variance
+      const delays = new Set<number>();
+      for (let i = 0; i < 20; i++) {
+        delays.add(transport.computeRetryDelay(0));
+      }
+
+      // With jitter, we should get different values
+      // With +/- 25%, values should be in range [7500, 12500]
+      for (const delay of delays) {
+        expect(delay).toBeGreaterThanOrEqual(7500);
+        expect(delay).toBeLessThanOrEqual(12500);
+      }
+
+      // Very unlikely to get all same values with random jitter
+      expect(delays.size).toBeGreaterThan(1);
+    });
+
+    it("should not add jitter when disabled", () => {
+      const config = createConfig({
+        retryBackoff: "constant",
+        retryDelay: 10,
+        retryJitter: false,
+      });
+      const transport = new InfrahubTransport(config, createMockHttpClient(vi.fn()));
+
+      const delays = new Set<number>();
+      for (let i = 0; i < 10; i++) {
+        delays.add(transport.computeRetryDelay(0));
+      }
+
+      expect(delays.size).toBe(1);
+      expect([...delays][0]).toBe(10000);
+    });
+  });
 });

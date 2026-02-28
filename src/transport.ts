@@ -200,7 +200,7 @@ export class InfrahubTransport {
     const effectiveTimeout = timeout ?? this.config.timeout;
     const maxDuration = this.config.maxRetryDuration;
     const startTime = Date.now();
-    let shouldRetry = this.config.retryOnFailure;
+    let attempt = 0;
 
     while (true) {
       try {
@@ -213,20 +213,49 @@ export class InfrahubTransport {
         };
         return await this.httpClient.request(options);
       } catch (error: unknown) {
-        if (error instanceof ServerNotReachableError && shouldRetry) {
+        if (error instanceof ServerNotReachableError && this.config.retryOnFailure) {
           const elapsed = (Date.now() - startTime) / 1000;
           if (elapsed < maxDuration) {
+            const delay = this.computeRetryDelay(attempt);
             this.log.warn(
-              `Unable to connect to ${this.config.address}, will retry in ${this.config.retryDelay} seconds...`,
+              `Unable to connect to ${this.config.address}, will retry in ${(delay / 1000).toFixed(1)} seconds (attempt ${attempt + 1})...`,
             );
-            await this.sleep(this.config.retryDelay * 1000);
-            shouldRetry = this.config.retryOnFailure;
+            await this.sleep(delay);
+            attempt++;
             continue;
           }
         }
         throw error;
       }
     }
+  }
+
+  /**
+   * Compute retry delay based on configured backoff strategy.
+   *
+   * - "constant": always uses retryDelay
+   * - "exponential": doubles delay each attempt (base * 2^attempt), capped at retryMaxDelay
+   *
+   * If retryJitter is enabled, adds random jitter of +/- 25%.
+   */
+  computeRetryDelay(attempt: number): number {
+    const baseDelay = this.config.retryDelay * 1000; // convert to ms
+    const maxDelay = this.config.retryMaxDelay * 1000;
+
+    let delay: number;
+    if (this.config.retryBackoff === "exponential") {
+      delay = Math.min(baseDelay * Math.pow(2, attempt), maxDelay);
+    } else {
+      delay = baseDelay;
+    }
+
+    if (this.config.retryJitter) {
+      // Add +/- 25% jitter
+      const jitter = delay * 0.25 * (2 * Math.random() - 1);
+      delay = Math.max(0, delay + jitter);
+    }
+
+    return delay;
   }
 
   private sleep(ms: number): Promise<void> {

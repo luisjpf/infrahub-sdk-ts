@@ -20,6 +20,9 @@ export const InfrahubConfigSchema = z
     retryOnFailure: z.boolean().default(false),
     retryDelay: z.number().int().positive().default(5),
     maxRetryDuration: z.number().int().positive().default(300),
+    retryBackoff: z.enum(["constant", "exponential"]).default("constant"),
+    retryMaxDelay: z.number().int().positive().default(60),
+    retryJitter: z.boolean().default(true),
   })
   .refine(
     (data) => {

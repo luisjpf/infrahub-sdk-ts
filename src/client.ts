@@ -86,6 +86,9 @@ export class InfrahubClient {
       retryOnFailure: this.config.retryOnFailure,
       retryDelay: this.config.retryDelay,
       maxRetryDuration: this.config.maxRetryDuration,
+      retryBackoff: this.config.retryBackoff,
+      retryMaxDelay: this.config.retryMaxDelay,
+      retryJitter: this.config.retryJitter,
     };
     return new InfrahubClient(configInput);
   }
