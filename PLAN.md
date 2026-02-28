@@ -237,8 +237,9 @@ infrahub-sdk-ts/
 - [x] IP address/prefix pool allocation
 
 ### Phase 4 — Developer Experience
-- [ ] Code generation from schema (typed node classes)
-- [ ] CLI tool (infrahubctl equivalent)
+- [x] Code generation from schema (typed interfaces, create types, typed client wrapper)
+- [x] CLI tool (`infrahub-sdk codegen`, `infrahub-sdk schema export`)
+- [x] Packaging: bin entry, codegen subpath export, ESM-first
 - [ ] Published npm package
 - [ ] Full API documentation
 - [ ] Example projects
