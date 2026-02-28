@@ -92,3 +92,7 @@ export type { Recorder, RecordedEntry, RecorderStorage } from "./recorder.js";
 // Proxy / TLS
 export { ProxyHttpClient } from "./proxy-client.js";
 export type { TlsProxyConfig } from "./proxy-client.js";
+
+// Code Generation
+export { generateFromSchema, getTsType, kindToTypeName, kindToFilename } from "./codegen/index.js";
+export type { SchemaExportData, GeneratedFile, GeneratorOptions } from "./codegen/index.js";
