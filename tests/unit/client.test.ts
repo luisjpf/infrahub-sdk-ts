@@ -27,7 +27,7 @@ function createTestClient(
       requests.push(opts);
 
       // Schema API
-      if (opts.url.includes("/api/schema/")) {
+      if (opts.url.includes("/api/schema")) {
         return {
           status: 200,
           data: {

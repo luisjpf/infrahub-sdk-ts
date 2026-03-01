@@ -16,12 +16,16 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 INFRAHUB_PORT="${INFRAHUB_PORT:-8000}"
-MAX_WAIT="${MAX_WAIT:-300}"
+MAX_WAIT="${MAX_WAIT:-600}"
 COMPOSE_PROJECT="infrahub-sdk-e2e"
 ADDR="http://localhost:${INFRAHUB_PORT}"
 
 TMPDIR_COMPOSE=""
 TMPDIR_CONSUMER=""
+
+# Discovered endpoints (populated during health-check probing)
+SCHEMA_ENDPOINT=""
+GRAPHQL_ENDPOINT=""
 
 echo "=== Infrahub SDK E2E Test ==="
 echo "Project root: $PROJECT_ROOT"
@@ -65,6 +69,39 @@ cleanup() {
 
 trap cleanup EXIT INT TERM
 
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+# Probe a list of candidate URLs; print the first that responds HTTP 200.
+probe_endpoint() {
+  for url in "$@"; do
+    local code
+    code=$(curl -s -o /dev/null -w "%{http_code}" "$url" 2>/dev/null || echo "000")
+    if [[ "$code" == "200" ]]; then
+      echo "$url"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# Try a GraphQL query against a candidate URL; print the version on success.
+probe_graphql() {
+  local url="$1"
+  local version
+  version=$(curl -s -X POST "$url" \
+    -H "Content-Type: application/json" \
+    -d '{"query":"{ InfrahubInfo { version } }"}' 2>/dev/null \
+    | node -e "
+      let d='';
+      process.stdin.on('data',c=>d+=c);
+      process.stdin.on('end',()=>{
+        try { console.log(JSON.parse(d).data.InfrahubInfo.version); }
+        catch { console.log(''); }
+      });
+    " 2>/dev/null || echo "")
+  echo "$version"
+}
+
 # ── Step 3: Build SDK ─────────────────────────────────────────────────────────
 
 echo "--- Step 3: Building SDK ---"
@@ -79,7 +116,7 @@ echo "--- Step 4: Starting Infrahub via Docker Compose ---"
 TMPDIR_COMPOSE="$(mktemp -d)"
 COMPOSE_FILE="$TMPDIR_COMPOSE/docker-compose.yml"
 
-curl -fsSL https://infrahub.opsmill.io -o "$COMPOSE_FILE"
+curl -fsSL https://raw.githubusercontent.com/opsmill/infrahub/stable/docker-compose.yml -o "$COMPOSE_FILE"
 echo "Downloaded compose file to $COMPOSE_FILE"
 
 docker compose -p "$COMPOSE_PROJECT" -f "$COMPOSE_FILE" up -d
@@ -91,43 +128,79 @@ echo ""
 echo "--- Step 5: Waiting for Infrahub to become healthy ---"
 SECONDS_WAITED=0
 INTERVAL=5
+RESTARTED=false
 
 while true; do
   if (( SECONDS_WAITED >= MAX_WAIT )); then
     echo "ERROR: Infrahub did not become healthy within ${MAX_WAIT}s"
-    echo "--- Last 50 lines of Docker logs ---"
-    docker compose -p "$COMPOSE_PROJECT" -f "$COMPOSE_FILE" logs --tail=50 2>/dev/null || true
+    echo ""
+    echo "--- Docker Compose ps ---"
+    docker compose -p "$COMPOSE_PROJECT" -f "$COMPOSE_FILE" ps 2>/dev/null || true
+    echo ""
+    echo "--- infrahub-server logs (last 200 lines) ---"
+    docker compose -p "$COMPOSE_PROJECT" -f "$COMPOSE_FILE" logs --tail=200 infrahub-server 2>/dev/null || true
     exit 1
   fi
 
-  # Stage 1: HTTP schema endpoint returns 200
-  HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${ADDR}/api/schema/?branch=main" 2>/dev/null || echo "000")
-
-  if [[ "$HTTP_CODE" == "200" ]]; then
-    # Stage 2: GraphQL returns a version string
-    VERSION=$(curl -s -X POST "${ADDR}/graphql/main" \
-      -H "Content-Type: application/json" \
-      -d '{"query":"{ InfrahubInfo { version } }"}' 2>/dev/null \
-      | node -e "
-        let d='';
-        process.stdin.on('data',c=>d+=c);
-        process.stdin.on('end',()=>{
-          try { console.log(JSON.parse(d).data.InfrahubInfo.version); }
-          catch { console.log(''); }
-        });
-      " 2>/dev/null || echo "")
-
-    if [[ -n "$VERSION" ]]; then
-      echo "Infrahub is healthy! Version: $VERSION (waited ${SECONDS_WAITED}s)"
-      break
+  # Init workaround: if infrahub-server crashed with the schema_hash error
+  # (known first-run issue), perform ONE controlled restart and keep waiting.
+  if [[ "$RESTARTED" == "false" ]] && (( SECONDS_WAITED > 0 )); then
+    SERVER_LOGS=$(docker compose -p "$COMPOSE_PROJECT" -f "$COMPOSE_FILE" \
+      logs --no-log-prefix infrahub-server 2>/dev/null || echo "")
+    if echo "$SERVER_LOGS" | grep -q "schema_hash has not been loaded"; then
+      echo "  Detected schema_hash init error — restarting infrahub-server..."
+      docker compose -p "$COMPOSE_PROJECT" -f "$COMPOSE_FILE" restart infrahub-server 2>/dev/null || true
+      RESTARTED=true
+      echo "  Restart issued. Continuing to wait..."
+      sleep "$INTERVAL"
+      SECONDS_WAITED=$((SECONDS_WAITED + INTERVAL))
+      continue
     fi
   fi
 
+  # Also restart if health checks have been failing for 120s (server may be
+  # stuck in a crash loop without the specific log message).
+  if [[ "$RESTARTED" == "false" ]] && (( SECONDS_WAITED >= 120 )); then
+    echo "  Health checks failing for ${SECONDS_WAITED}s — restarting infrahub-server as precaution..."
+    docker compose -p "$COMPOSE_PROJECT" -f "$COMPOSE_FILE" restart infrahub-server 2>/dev/null || true
+    RESTARTED=true
+    echo "  Restart issued. Continuing to wait..."
+    sleep "$INTERVAL"
+    SECONDS_WAITED=$((SECONDS_WAITED + INTERVAL))
+    continue
+  fi
+
+  # Probe REST schema endpoint candidates (no trailing slash first, then with)
+  FOUND_SCHEMA=$(probe_endpoint \
+    "${ADDR}/api/schema?branch=main" \
+    "${ADDR}/api/schema/?branch=main" \
+  ) || FOUND_SCHEMA=""
+
+  if [[ -n "$FOUND_SCHEMA" ]]; then
+    # REST is responding — now probe GraphQL candidates
+    for gql_path in "/graphql" "/graphql/main"; do
+      VERSION=$(probe_graphql "${ADDR}${gql_path}")
+      if [[ -n "$VERSION" ]]; then
+        SCHEMA_ENDPOINT="$FOUND_SCHEMA"
+        GRAPHQL_ENDPOINT="${ADDR}${gql_path}"
+        echo "Infrahub is healthy! Version: $VERSION (waited ${SECONDS_WAITED}s)"
+        echo "  Schema endpoint: $SCHEMA_ENDPOINT"
+        echo "  GraphQL endpoint: $GRAPHQL_ENDPOINT"
+        break 2
+      fi
+    done
+  fi
+
+  # Show status using the preferred endpoint's HTTP code
+  HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${ADDR}/api/schema?branch=main" 2>/dev/null || echo "000")
   echo "  Waiting... (${SECONDS_WAITED}s / ${MAX_WAIT}s, HTTP=$HTTP_CODE)"
   sleep "$INTERVAL"
   SECONDS_WAITED=$((SECONDS_WAITED + INTERVAL))
 done
 echo ""
+
+# Derive the schema base path (everything before the query string)
+SCHEMA_BASE="${SCHEMA_ENDPOINT%%\?*}"
 
 # ── Step 6: Authenticate + create API token ───────────────────────────────────
 
@@ -151,11 +224,12 @@ if [[ -z "$ACCESS_TOKEN" ]]; then
 fi
 echo "Got access token."
 
-API_TOKEN=$(curl -s -X POST "${ADDR}/graphql/main" \
+TOKEN_RESPONSE=$(curl -s -X POST "$GRAPHQL_ENDPOINT" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $ACCESS_TOKEN" \
-  -d '{"query":"mutation { InfrahubAccountTokenCreate(data: { name: { value: \"e2e-test-token\" } }) { ok object { token { value } } } }"}' \
-  | node -e "
+  -d '{"query":"mutation { InfrahubAccountTokenCreate(data: { name: \"e2e-test-token\" }) { ok object { token { value } } } }"}')
+
+API_TOKEN=$(echo "$TOKEN_RESPONSE" | node -e "
     let d='';
     process.stdin.on('data',c=>d+=c);
     process.stdin.on('end',()=>{
@@ -166,6 +240,7 @@ API_TOKEN=$(curl -s -X POST "${ADDR}/graphql/main" \
 
 if [[ -z "$API_TOKEN" ]]; then
   echo "ERROR: Failed to create API token"
+  echo "  GraphQL response: $TOKEN_RESPONSE"
   exit 1
 fi
 echo "Created API token."
@@ -189,7 +264,7 @@ SCHEMA_PAYLOAD=$(node -e "
 ")
 
 LOAD_RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" \
-  -X POST "${ADDR}/api/schema/load?branch=main" \
+  -X POST "${SCHEMA_BASE}/load?branch=main" \
   -H "Content-Type: application/json" \
   -H "X-INFRAHUB-KEY: $API_TOKEN" \
   -d "$SCHEMA_PAYLOAD")
@@ -197,7 +272,7 @@ LOAD_RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" \
 if [[ "$LOAD_RESPONSE" != "200" && "$LOAD_RESPONSE" != "202" ]]; then
   echo "ERROR: Schema load failed with HTTP $LOAD_RESPONSE"
   # Show the full response for debugging
-  curl -s -X POST "${ADDR}/api/schema/load?branch=main" \
+  curl -s -X POST "${SCHEMA_BASE}/load?branch=main" \
     -H "Content-Type: application/json" \
     -H "X-INFRAHUB-KEY: $API_TOKEN" \
     -d "$SCHEMA_PAYLOAD"
@@ -218,7 +293,7 @@ while true; do
     exit 1
   fi
 
-  HAS_DEVICE=$(curl -s "${ADDR}/api/schema/?branch=main" \
+  HAS_DEVICE=$(curl -s "$SCHEMA_ENDPOINT" \
     -H "X-INFRAHUB-KEY: $API_TOKEN" \
     | node -e "
       let d='';
@@ -330,7 +405,7 @@ cp "$SCRIPT_DIR/consumer-test.ts" "$TMPDIR_CONSUMER/src/test.ts"
 # Install dependencies
 echo "Installing dependencies..."
 cd "$TMPDIR_CONSUMER"
-npm install "infrahub-sdk@file:$PROJECT_ROOT" tsx typescript --save-dev 2>&1 | tail -3
+npm install "infrahub-sdk@file:$PROJECT_ROOT" tsx typescript @types/node --save-dev 2>&1 | tail -3
 echo "Dependencies installed."
 echo ""
 

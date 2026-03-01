@@ -2,7 +2,7 @@ import { SchemaNotFoundError, ValidationError } from "../errors.js";
 import type { InfrahubTransport } from "../transport.js";
 import type { GenericSchema, NodeSchema, SchemaType } from "./types.js";
 
-/** Response shape from /api/schema/?branch=X */
+/** Response shape from /api/schema?branch=X */
 interface SchemaAPIResponse {
   nodes: NodeSchema[];
   generics: GenericSchema[];
@@ -115,7 +115,7 @@ export class SchemaManager {
    * Fetch all schemas from the API for a given branch and populate the cache.
    */
   private async fetchAll(branch: string): Promise<void> {
-    const url = `${this.transport.buildGraphQLUrl().replace("/graphql", "")}/api/schema/?branch=${encodeURIComponent(branch)}`;
+    const url = `${this.transport.buildGraphQLUrl().replace("/graphql", "")}/api/schema?branch=${encodeURIComponent(branch)}`;
     const response = await this.transport.get(url);
 
     const data = response.data as SchemaAPIResponse;

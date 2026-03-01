@@ -206,7 +206,7 @@ function createStandardHandler(
 ) {
   return (opts: HttpRequestOptions): HttpResponse => {
     // Schema API
-    if (opts.url.includes("/api/schema/")) {
+    if (opts.url.includes("/api/schema")) {
       return {
         status: 200,
         data: { nodes: [deviceSchema, siteSchema], generics: [genericDeviceSchema] },

@@ -119,7 +119,7 @@ function generateSchemaFile(
   lines.push(`  /** Unique identifier */`);
   lines.push(`  id: string;`);
   lines.push(`  /** Display label */`);
-  display_label: lines.push(`  display_label: string | null;`);
+  lines.push(`  display_label: string | null;`);
 
   // Attributes — sorted by name
   const sortedAttrs = [...schema.attributes].sort((a, b) =>
@@ -205,7 +205,7 @@ function generateRelationshipField(
 ): string[] {
   const lines: string[] = [];
   const peerType = knownKinds.has(rel.peer)
-    ? kindToTypeName(rel.peer)
+    ? `${kindToTypeName(rel.peer)}Data`
     : "{ id: string }";
   const optional = rel.optional ? "?" : "";
 
@@ -295,8 +295,8 @@ function generateTypedClientFile(
   const nodeSchemas = schemas.filter(isNodeSchema);
   const lines: string[] = [header];
 
-  lines.push(`import type { InfrahubClient } from "../client.js";`);
-  lines.push(`import type { InfrahubNode } from "../node/index.js";`);
+  lines.push(`import type { InfrahubClient } from "infrahub-sdk";`);
+  lines.push(`import type { InfrahubNode } from "infrahub-sdk";`);
   lines.push("");
 
   // Import all generated types
@@ -359,7 +359,7 @@ function generateTypedClientFile(
     const kind = schema.kind;
     lines.push(`    ${lcFirst(schema.name)}: {`);
     lines.push(
-      `      create: (data) => client.create("${kind}", data as Record<string, unknown>),`,
+      `      create: (data) => client.create("${kind}", data as unknown as Record<string, unknown>),`,
     );
     lines.push(
       `      get: (options) => client.get("${kind}", options),`,

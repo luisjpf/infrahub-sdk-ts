@@ -100,7 +100,7 @@ describe("generated interface content", () => {
 
   it("generates relationship fields", () => {
     // site is cardinality one
-    expect(deviceFile.content).toContain("site: InfraSite | null;");
+    expect(deviceFile.content).toContain("site: InfraSiteData | null;");
     // interfaces is cardinality many
     expect(deviceFile.content).toContain("interfaces?:");
   });
