@@ -37,6 +37,10 @@ describe("codegen command parsing", () => {
     const program = createProgram();
     program.exitOverride();
 
+    const codegen = program.commands.find((c) => c.name() === "codegen")!;
+    codegen.exitOverride();
+    codegen.configureOutput({ writeErr: () => {}, writeOut: () => {} });
+
     expect(() => {
       program.parse(["codegen"], { from: "user" });
     }).toThrow();
