@@ -65,10 +65,15 @@ export class SchemaManager {
 
   /** Per-branch schema cache: branch → (kind → schema) */
   private cache: Map<string, Map<string, SchemaType>> = new Map();
+  /** Insertion-order tracking for LRU eviction of branch caches. */
+  private cacheOrder: string[] = [];
+  /** Maximum number of branch caches to retain (0 = unlimited). */
+  private readonly maxCacheBranches: number;
 
-  constructor(transport: InfrahubTransport, defaultBranch: string) {
+  constructor(transport: InfrahubTransport, defaultBranch: string, maxCacheBranches: number = 20) {
     this.transport = transport;
     this.defaultBranch = defaultBranch;
+    this.maxCacheBranches = maxCacheBranches;
   }
 
   /**
@@ -115,7 +120,7 @@ export class SchemaManager {
    * Fetch all schemas from the API for a given branch and populate the cache.
    */
   private async fetchAll(branch: string): Promise<void> {
-    const url = `${this.transport.buildGraphQLUrl().replace("/graphql", "")}/api/schema?branch=${encodeURIComponent(branch)}`;
+    const url = `${this.buildBaseUrl()}/api/schema?branch=${encodeURIComponent(branch)}`;
     const response = await this.transport.get(url);
 
     const data = response.data as SchemaAPIResponse;
@@ -134,6 +139,7 @@ export class SchemaManager {
     }
 
     this.cache.set(branch, branchCache);
+    this.touchCacheOrder(branch);
   }
 
   /** Manually set a schema in the cache (useful for testing). */
@@ -149,8 +155,10 @@ export class SchemaManager {
   clearCache(branch?: string): void {
     if (branch) {
       this.cache.delete(branch);
+      this.cacheOrder = this.cacheOrder.filter((b) => b !== branch);
     } else {
       this.cache.clear();
+      this.cacheOrder = [];
     }
   }
 
@@ -184,7 +192,7 @@ export class SchemaManager {
       url,
       { schemas },
       undefined,
-      Math.max(120, 60),
+      120,
     );
 
     if (response.status === 401 || response.status === 403) {
@@ -242,7 +250,7 @@ export class SchemaManager {
       url,
       { schemas },
       undefined,
-      Math.max(120, 60),
+      120,
     );
 
     const data = response.data as Record<string, unknown> | null;
@@ -306,13 +314,29 @@ export class SchemaManager {
     return result;
   }
 
-  /** Build the base API URL (without /graphql). */
+  /** Build the base API URL from the transport's configured address. */
   private buildBaseUrl(): string {
-    return this.transport.buildGraphQLUrl().replace(/\/graphql$/, "");
+    return this.transport.address;
+  }
+
+  /** Update LRU order for a branch and evict oldest if over limit. */
+  private touchCacheOrder(branch: string): void {
+    this.cacheOrder = this.cacheOrder.filter((b) => b !== branch);
+    this.cacheOrder.push(branch);
+
+    if (this.maxCacheBranches > 0) {
+      while (this.cacheOrder.length > this.maxCacheBranches) {
+        const oldest = this.cacheOrder.shift();
+        if (oldest) {
+          this.cache.delete(oldest);
+        }
+      }
+    }
   }
 }
 
 /** Type guard: does this schema have NodeSchema-specific fields? */
 function isNodeSchemaType(schema: SchemaType): schema is NodeSchema {
-  return "inherit_from" in schema || "default_filter" in schema || "hierarchy" in schema;
+  if ("used_by" in schema) return false;
+  return true;
 }
