@@ -116,9 +116,14 @@ export interface GenericSchema {
 /** Union type for all schema types the manager can handle. */
 export type SchemaType = NodeSchema | GenericSchema;
 
-/** Helper to check if a schema is a NodeSchema (has inherit_from). */
+/**
+ * Type guard: check if a schema is a NodeSchema.
+ * Uses `used_by` as a negative discriminant — only GenericSchema has it.
+ * Also checks for NodeSchema-specific fields as a positive signal.
+ */
 export function isNodeSchema(schema: SchemaType): schema is NodeSchema {
-  return "inherit_from" in schema || "default_filter" in schema || "hierarchy" in schema;
+  if ("used_by" in schema) return false;
+  return true;
 }
 
 /** Get attribute names from a schema. */

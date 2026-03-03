@@ -43,7 +43,9 @@ export class GraphQLError extends InfrahubError {
     query?: string,
     variables?: Record<string, unknown>,
   ) {
-    super(`An error occurred while executing the GraphQL Query ${query ?? "unknown"}, ${JSON.stringify(errors)}`);
+    const queryPreview = query && query.length > 200 ? query.slice(0, 200) + "..." : (query ?? "unknown");
+    const errorMessages = errors.map((e) => (e.message as string) ?? JSON.stringify(e)).join("; ");
+    super(`GraphQL error: ${errorMessages} (query: ${queryPreview})`);
     this.name = "GraphQLError";
     this.errors = errors;
     this.query = query;

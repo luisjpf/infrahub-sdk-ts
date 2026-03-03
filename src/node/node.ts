@@ -96,6 +96,11 @@ export class InfrahubNode {
     return attr;
   }
 
+  /** Set an attribute value by name. Marks the attribute as mutated. */
+  setAttribute(name: string, value: unknown): void {
+    this.getAttribute(name).value = value;
+  }
+
   /** Check if an attribute exists. */
   hasAttribute(name: string): boolean {
     return this._attributes.has(name);

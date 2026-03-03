@@ -31,6 +31,12 @@ export { GraphQLQuery, GraphQLMutation } from "./graphql/index.js";
 
 // Schema
 export { SchemaManager } from "./schema/index.js";
+export {
+  isNodeSchema,
+  getAttributeNames,
+  getRelationshipNames,
+  getRelationshipByName,
+} from "./schema/index.js";
 export type {
   NodeSchema,
   GenericSchema,
