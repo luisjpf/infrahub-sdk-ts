@@ -90,6 +90,11 @@ export class InfrahubTransport {
     }
   }
 
+  /** The configured server address (without trailing slash). */
+  get address(): string {
+    return this.config.address;
+  }
+
   /** Build the GraphQL URL for a given branch and optional timestamp. */
   buildGraphQLUrl(branchName?: string, at?: string): string {
     let url = `${this.config.address}/graphql`;
@@ -166,7 +171,9 @@ export class InfrahubTransport {
     }
 
     if (!this.config.username || !this.config.password) {
-      return;
+      throw new AuthenticationError(
+        "Login failed: no credentials configured. Set username/password or use API token authentication.",
+      );
     }
 
     const response = await this.httpClient.request({
