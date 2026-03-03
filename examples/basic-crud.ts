@@ -44,7 +44,7 @@ async function main() {
   console.log(`Fetched device: ${fetched.displayLabel}`);
 
   // 7. Update the device
-  fetched.setAttribute("role", "leaf");
+  fetched.getAttribute("role").value = "leaf";
   await client.save(fetched);
   console.log("Updated device role to 'leaf'");
 
