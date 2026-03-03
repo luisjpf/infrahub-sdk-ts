@@ -59,47 +59,27 @@ export class ProxyHttpClient implements HttpClient {
         signal: controller.signal,
       };
 
-      // If proxy is configured, try to use undici ProxyAgent (Node 18+)
-      if (this.tlsProxyConfig.proxyUrl) {
-        const dispatcher = await this.createProxyDispatcher();
-        if (dispatcher) {
-          // Node.js fetch supports the `dispatcher` option via undici
-          (fetchOptions as Record<string, unknown>).dispatcher = dispatcher;
-        }
+      // Build a dispatcher that handles both proxy and TLS options via undici.
+      // This avoids the process-wide NODE_TLS_REJECT_UNAUTHORIZED race condition.
+      const dispatcher = await this.createDispatcher();
+      if (dispatcher) {
+        (fetchOptions as Record<string, unknown>).dispatcher = dispatcher;
       }
 
-      // If TLS insecure mode, set NODE_TLS_REJECT_UNAUTHORIZED for this request
-      // Note: This is a process-wide setting, not ideal but standard in Node.js
-      const prevTlsReject = process.env.NODE_TLS_REJECT_UNAUTHORIZED;
-      if (this.tlsProxyConfig.tlsInsecure) {
-        process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
-      }
+      const response = await fetch(url, fetchOptions);
 
-      try {
-        const response = await fetch(url, fetchOptions);
+      const responseHeaders: Record<string, string> = {};
+      response.headers.forEach((value, key) => {
+        responseHeaders[key] = value;
+      });
 
-        const responseHeaders: Record<string, string> = {};
-        response.headers.forEach((value, key) => {
-          responseHeaders[key] = value;
-        });
+      const data: unknown = await response.json().catch(() => null);
 
-        const data: unknown = await response.json().catch(() => null);
-
-        return {
-          status: response.status,
-          data,
-          headers: responseHeaders,
-        };
-      } finally {
-        // Restore TLS setting
-        if (this.tlsProxyConfig.tlsInsecure) {
-          if (prevTlsReject !== undefined) {
-            process.env.NODE_TLS_REJECT_UNAUTHORIZED = prevTlsReject;
-          } else {
-            delete process.env.NODE_TLS_REJECT_UNAUTHORIZED;
-          }
-        }
-      }
+      return {
+        status: response.status,
+        data,
+        headers: responseHeaders,
+      };
     } catch (error: unknown) {
       if (error instanceof DOMException && error.name === "AbortError") {
         throw new ServerNotResponsiveError(url, timeout);
@@ -116,21 +96,49 @@ export class ProxyHttpClient implements HttpClient {
   }
 
   /**
-   * Attempt to create an undici ProxyAgent for proxy support.
+   * Create a dispatcher that handles proxy and/or TLS insecure mode.
+   * Uses undici's Agent/ProxyAgent with per-request TLS config to avoid
+   * the process-wide NODE_TLS_REJECT_UNAUTHORIZED race condition.
    * Returns undefined if undici is not available (graceful fallback).
    */
-  private async createProxyDispatcher(): Promise<unknown | undefined> {
+  private async createDispatcher(): Promise<unknown | undefined> {
+    const needsProxy = !!this.tlsProxyConfig.proxyUrl;
+    const needsTls = !!this.tlsProxyConfig.tlsInsecure || !!this.tlsProxyConfig.tlsCaFile;
+
+    if (!needsProxy && !needsTls) return undefined;
+
     try {
-      // Dynamic import — undici is bundled with Node 18+ but may not be directly importable.
-      // We use a variable to prevent TypeScript from resolving the module at compile time.
       const moduleName = "undici";
       const undici = await (import(moduleName) as Promise<Record<string, unknown>>);
-      const ProxyAgentCtor = undici.ProxyAgent as (new (url: string) => unknown) | undefined;
-      if (ProxyAgentCtor && this.tlsProxyConfig.proxyUrl) {
-        return new ProxyAgentCtor(this.tlsProxyConfig.proxyUrl);
+
+      // Build TLS connect options
+      const connect: Record<string, unknown> = {};
+      if (this.tlsProxyConfig.tlsInsecure) {
+        connect.rejectUnauthorized = false;
+      }
+      if (this.tlsProxyConfig.tlsCaFile) {
+        const { readFileSync } = await import("node:fs");
+        connect.ca = readFileSync(this.tlsProxyConfig.tlsCaFile);
+      }
+
+      const connectOpts = Object.keys(connect).length > 0 ? { connect } : {};
+
+      if (needsProxy) {
+        const ProxyAgentCtor = undici.ProxyAgent as (new (opts: Record<string, unknown>) => unknown) | undefined;
+        if (ProxyAgentCtor) {
+          return new ProxyAgentCtor({
+            uri: this.tlsProxyConfig.proxyUrl!,
+            ...connectOpts,
+          });
+        }
+      } else {
+        const AgentCtor = undici.Agent as (new (opts: Record<string, unknown>) => unknown) | undefined;
+        if (AgentCtor) {
+          return new AgentCtor(connectOpts);
+        }
       }
     } catch {
-      // undici not available — fall through without proxy
+      // undici not available — fall through without dispatcher
     }
     return undefined;
   }
