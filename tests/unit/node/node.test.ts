@@ -92,6 +92,44 @@ describe("InfrahubNode", () => {
       expect(node.hasAttribute("name")).toBe(true);
       expect(node.hasAttribute("nonexistent")).toBe(false);
     });
+
+    it("should set attribute value via setAttribute()", () => {
+      const node = new InfrahubNode({
+        schema: deviceSchema,
+        branch: "main",
+        data: { name: { value: "router1" } },
+      });
+      node.setAttribute("name", "router2");
+      expect(node.getAttribute("name").value).toBe("router2");
+    });
+
+    it("should mark attribute as mutated after setAttribute()", () => {
+      const node = new InfrahubNode({
+        schema: deviceSchema,
+        branch: "main",
+        data: {
+          id: "device-1",
+          name: { value: "router1" },
+          description: { value: "old" },
+        },
+      });
+      node.setAttribute("description", "new description");
+      const input = node.generateInputData(true);
+      const data = (input.data as Record<string, unknown>).data as Record<string, unknown>;
+      expect(data.description).toEqual({ value: "new description" });
+      // name was not modified so it should be excluded
+      expect(data.name).toBeUndefined();
+    });
+
+    it("should throw when setAttribute() is called with non-existent attribute", () => {
+      const node = new InfrahubNode({
+        schema: deviceSchema,
+        branch: "main",
+      });
+      expect(() => node.setAttribute("nonexistent", "value")).toThrow(
+        "Attribute 'nonexistent' not found on InfraDevice",
+      );
+    });
   });
 
   describe("relationships", () => {
@@ -368,6 +406,21 @@ describe("InfrahubNode", () => {
         data: { name: { value: "NYC" } },
       });
       // siteSchema doesn't have human_friendly_id defined
+      expect(node.getHumanFriendlyId()).toBeNull();
+    });
+
+    it("should return null when HFID references non-existent attribute", () => {
+      // Create a schema where human_friendly_id references an attribute
+      // that doesn't exist in the attributes list
+      const schemaWithBadHfid = {
+        ...deviceSchema,
+        human_friendly_id: ["nonexistent__value"],
+      };
+      const node = new InfrahubNode({
+        schema: schemaWithBadHfid,
+        branch: "main",
+        data: { name: { value: "router1" } },
+      });
       expect(node.getHumanFriendlyId()).toBeNull();
     });
   });

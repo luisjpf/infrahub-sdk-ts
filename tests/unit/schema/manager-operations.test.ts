@@ -49,6 +49,7 @@ const customNodeSchema: NodeSchema = {
 
 function createMockTransport(): InfrahubTransport {
   return {
+    address: "http://localhost:8000",
     buildGraphQLUrl: vi.fn().mockReturnValue("http://localhost:8000/graphql"),
     get: vi.fn<(url: string, extraHeaders?: Record<string, string>) => Promise<HttpResponse>>().mockResolvedValue({
       status: 200,

@@ -96,13 +96,12 @@ describe("InfrahubTransport", () => {
       expect(callArgs.body).toEqual({ username: "admin", password: "secret" });
     });
 
-    it("should do nothing when no credentials", async () => {
+    it("should throw when no credentials configured", async () => {
       const handler = vi.fn();
       const config = createConfig({ apiToken: "token" });
       const transport = new InfrahubTransport(config, createMockHttpClient(handler));
 
-      await transport.login();
-
+      await expect(transport.login()).rejects.toThrow(AuthenticationError);
       expect(handler).not.toHaveBeenCalled();
     });
 
