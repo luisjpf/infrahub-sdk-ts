@@ -9,7 +9,7 @@
  *   npx tsx examples/basic-crud.ts
  */
 
-import { InfrahubClient } from "infrahub-sdk";
+import { InfrahubClient } from "../src/index.js";
 
 async function main() {
   // 1. Create a client

@@ -38,7 +38,33 @@ describe("schema/types", () => {
         attributes: [],
         relationships: [],
       };
+      // Minimal NodeSchema with no discriminant fields still defaults to true
       expect(isNodeSchema(minimal)).toBe(true);
+    });
+
+    it("should return false for GenericSchema without used_by (ambiguous but has no NodeSchema fields)", () => {
+      // Simulates a GenericSchema where the API omitted used_by
+      const ambiguous = {
+        kind: "TestAmbiguous",
+        namespace: "Test",
+        name: "Ambiguous",
+        attributes: [],
+        relationships: [],
+      } as NodeSchema | GenericSchema;
+      // Defaults to NodeSchema when ambiguous (no used_by, no NodeSchema-specific fields)
+      expect(isNodeSchema(ambiguous)).toBe(true);
+    });
+
+    it("should return true for NodeSchema with only inherit_from", () => {
+      const schema: NodeSchema = {
+        kind: "TestNode",
+        namespace: "Test",
+        name: "Node",
+        attributes: [],
+        relationships: [],
+        inherit_from: ["SomeParent"],
+      };
+      expect(isNodeSchema(schema)).toBe(true);
     });
   });
 

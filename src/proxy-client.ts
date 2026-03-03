@@ -39,6 +39,10 @@ export interface TlsProxyConfig {
 export class ProxyHttpClient implements HttpClient {
   readonly tlsProxyConfig: TlsProxyConfig;
 
+  /** Cached dispatcher — created lazily on first request, reused thereafter. */
+  private _cachedDispatcher: unknown | undefined;
+  private _dispatcherResolved = false;
+
   constructor(config: TlsProxyConfig = {}) {
     this.tlsProxyConfig = config;
   }
@@ -61,7 +65,7 @@ export class ProxyHttpClient implements HttpClient {
 
       // Build a dispatcher that handles both proxy and TLS options via undici.
       // This avoids the process-wide NODE_TLS_REJECT_UNAUTHORIZED race condition.
-      const dispatcher = await this.createDispatcher();
+      const dispatcher = await this.getDispatcher();
       if (dispatcher) {
         (fetchOptions as Record<string, unknown>).dispatcher = dispatcher;
       }
@@ -93,6 +97,14 @@ export class ProxyHttpClient implements HttpClient {
         clearTimeout(timeoutId);
       }
     }
+  }
+
+  /** Return the cached dispatcher, creating it lazily on first call. */
+  private async getDispatcher(): Promise<unknown | undefined> {
+    if (this._dispatcherResolved) return this._cachedDispatcher;
+    this._cachedDispatcher = await this.createDispatcher();
+    this._dispatcherResolved = true;
+    return this._cachedDispatcher;
   }
 
   /**

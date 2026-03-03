@@ -40,16 +40,10 @@ export function createProgram(): Command {
 }
 
 // Run when executed directly (not imported for testing).
-const isCLI =
-  typeof process !== "undefined" &&
-  process.argv[1] !== undefined;
-
-if (isCLI) {
+if (typeof process !== "undefined" && process.argv[1]) {
   try {
-    const scriptUrl = new URL(`file://${process.argv[1]}`).href;
-    if (import.meta.url === scriptUrl) {
-      const program = createProgram();
-      program.parse();
+    if (import.meta.url === new URL(`file://${process.argv[1]}`).href) {
+      createProgram().parse();
     }
   } catch {
     // URL parsing failed — not direct execution

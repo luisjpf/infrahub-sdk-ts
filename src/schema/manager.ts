@@ -1,5 +1,6 @@
 import { SchemaNotFoundError, ValidationError } from "../errors.js";
 import type { InfrahubTransport } from "../transport.js";
+import { isNodeSchema } from "./types.js";
 import type { GenericSchema, NodeSchema, SchemaType } from "./types.js";
 
 /** Response shape from /api/schema?branch=X */
@@ -149,6 +150,7 @@ export class SchemaManager {
       this.cache.set(branchName, new Map());
     }
     this.cache.get(branchName)!.set(kind, schema);
+    this.touchCacheOrder(branchName);
   }
 
   /** Clear the cache for a specific branch or all branches. */
@@ -304,7 +306,7 @@ export class SchemaManager {
 
       const nsExport = result.namespaces[ns]!;
 
-      if (isNodeSchemaType(schema)) {
+      if (isNodeSchema(schema)) {
         nsExport.nodes.push(schema);
       } else {
         nsExport.generics.push(schema as GenericSchema);
@@ -333,10 +335,4 @@ export class SchemaManager {
       }
     }
   }
-}
-
-/** Type guard: does this schema have NodeSchema-specific fields? */
-function isNodeSchemaType(schema: SchemaType): schema is NodeSchema {
-  if ("used_by" in schema) return false;
-  return true;
 }
