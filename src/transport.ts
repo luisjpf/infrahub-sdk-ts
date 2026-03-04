@@ -146,7 +146,22 @@ export class InfrahubTransport {
     if (this.accessToken) {
       headers["Authorization"] = `Bearer ${this.accessToken}`;
     }
-    return this.doRequest("GET", url, undefined, headers, timeout);
+
+    let response = await this.doRequest("GET", url, undefined, headers, timeout);
+
+    // Handle token refresh on 401 "Expired Signature"
+    if (response.status === 401) {
+      const data = response.data as Record<string, unknown> | null;
+      const errors = (data?.errors ?? []) as Array<Record<string, unknown>>;
+      const messages = errors.map((e) => e.message as string);
+      if (messages.includes("Expired Signature") && this.refreshToken) {
+        await this.login(true);
+        headers["Authorization"] = `Bearer ${this.accessToken}`;
+        response = await this.doRequest("GET", url, undefined, headers, timeout);
+      }
+    }
+
+    return response;
   }
 
   /**
@@ -164,6 +179,10 @@ export class InfrahubTransport {
         },
         timeout: this.config.timeout,
       });
+
+      if (response.status !== 200) {
+        throw new AuthenticationError("Token refresh failed");
+      }
 
       const data = response.data as Record<string, string>;
       this.accessToken = data.access_token ?? "";

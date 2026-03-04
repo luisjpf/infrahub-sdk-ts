@@ -41,11 +41,13 @@ export function createProgram(): Command {
 
 // Run when executed directly (not imported for testing).
 if (typeof process !== "undefined" && process.argv[1]) {
+  let isDirect = false;
   try {
-    if (import.meta.url === pathToFileURL(process.argv[1]).href) {
-      createProgram().parse();
-    }
+    isDirect = import.meta.url === pathToFileURL(process.argv[1]).href;
   } catch {
     // URL parsing failed — not direct execution
+  }
+  if (isDirect) {
+    createProgram().parse();
   }
 }

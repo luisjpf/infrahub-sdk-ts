@@ -142,18 +142,15 @@ describe("ProxyHttpClient", () => {
         }),
       ).rejects.toThrow(ServerNotResponsiveError);
 
-      try {
-        await client.request({
+      const err: ServerNotResponsiveError = await client.request({
           method: "GET",
           url: "http://localhost:8000/api/test",
           timeout: 5,
-        });
-      } catch (err) {
-        expect(err).toBeInstanceOf(ServerNotResponsiveError);
-        const sErr = err as ServerNotResponsiveError;
-        expect(sErr.url).toBe("http://localhost:8000/api/test");
-        expect(sErr.timeout).toBe(5);
-      }
+        }).catch((e) => e) as ServerNotResponsiveError;
+
+      expect(err).toBeInstanceOf(ServerNotResponsiveError);
+      expect(err.url).toBe("http://localhost:8000/api/test");
+      expect(err.timeout).toBe(5);
     });
 
     it("should throw ServerNotReachableError on network TypeError", async () => {
@@ -167,16 +164,13 @@ describe("ProxyHttpClient", () => {
         }),
       ).rejects.toThrow(ServerNotReachableError);
 
-      try {
-        await client.request({
+      const err: ServerNotReachableError = await client.request({
           method: "GET",
           url: "http://unreachable:9999/api",
-        });
-      } catch (err) {
-        expect(err).toBeInstanceOf(ServerNotReachableError);
-        const sErr = err as ServerNotReachableError;
-        expect(sErr.address).toBe("http://unreachable:9999/api");
-      }
+        }).catch((e) => e) as ServerNotReachableError;
+
+      expect(err).toBeInstanceOf(ServerNotReachableError);
+      expect(err.address).toBe("http://unreachable:9999/api");
     });
 
     it("should re-throw unknown errors unchanged", async () => {

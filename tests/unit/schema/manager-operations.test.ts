@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { ValidationError } from "../../../src/errors.js";
+import { AuthenticationError, ValidationError } from "../../../src/errors.js";
 import { SchemaManager } from "../../../src/schema/manager.js";
 import type { InfrahubTransport } from "../../../src/transport.js";
 import type { HttpResponse } from "../../../src/types.js";
@@ -189,9 +189,29 @@ describe("SchemaManager - load/check/export", () => {
       expect(result.warnings[0]!.type).toBe("deprecation");
     });
 
-    it("should throw ValidationError on 401", async () => {
+    it("should throw AuthenticationError on 401", async () => {
       vi.mocked(transport.post).mockResolvedValue({
         status: 401,
+        data: null,
+        headers: {},
+      });
+
+      await expect(manager.load([{ kind: "Test" }])).rejects.toThrow(AuthenticationError);
+    });
+
+    it("should throw AuthenticationError on 403", async () => {
+      vi.mocked(transport.post).mockResolvedValue({
+        status: 403,
+        data: null,
+        headers: {},
+      });
+
+      await expect(manager.load([{ kind: "Test" }])).rejects.toThrow(AuthenticationError);
+    });
+
+    it("should throw ValidationError on unexpected status", async () => {
+      vi.mocked(transport.post).mockResolvedValue({
+        status: 500,
         data: null,
         headers: {},
       });
@@ -242,6 +262,26 @@ describe("SchemaManager - load/check/export", () => {
 
     it("should throw ValidationError for empty schemas", async () => {
       await expect(manager.check([])).rejects.toThrow(ValidationError);
+    });
+
+    it("should throw AuthenticationError on 401", async () => {
+      vi.mocked(transport.post).mockResolvedValue({
+        status: 401,
+        data: null,
+        headers: {},
+      });
+
+      await expect(manager.check([{ kind: "Test" }])).rejects.toThrow(AuthenticationError);
+    });
+
+    it("should throw AuthenticationError on 403", async () => {
+      vi.mocked(transport.post).mockResolvedValue({
+        status: 403,
+        data: null,
+        headers: {},
+      });
+
+      await expect(manager.check([{ kind: "Test" }])).rejects.toThrow(AuthenticationError);
     });
 
     it("should use correct URL with branch", async () => {

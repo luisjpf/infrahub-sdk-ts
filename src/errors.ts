@@ -7,6 +7,9 @@ export class InfrahubError extends Error {
   constructor(message?: string) {
     super(message);
     this.name = "InfrahubError";
+    if (Error.captureStackTrace) {
+      Error.captureStackTrace(this, this.constructor);
+    }
   }
 }
 

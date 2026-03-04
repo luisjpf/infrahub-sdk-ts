@@ -1,6 +1,13 @@
 import { describe, it, expect } from "vitest";
 import {
+  InfrahubError,
+  ServerNotReachableError,
   ServerNotResponsiveError,
+  AuthenticationError,
+  NodeNotFoundError,
+  SchemaNotFoundError,
+  BranchNotFoundError,
+  ValidationError,
   URLNotFoundError,
   GraphQLError,
 } from "../../src/errors.js";
@@ -120,5 +127,112 @@ describe("GraphQLError", () => {
     const err = new GraphQLError([{ message: "error" }], exactQuery);
     expect(err.message).toContain(exactQuery);
     expect(err.message).not.toContain("...");
+  });
+
+  it("should handle empty errors array", () => {
+    const err = new GraphQLError([], "{ test }");
+    expect(err.message).toBe("GraphQL error:  (query: { test })");
+    expect(err.errors).toEqual([]);
+  });
+});
+
+describe("InfrahubError", () => {
+  it("should set name and message", () => {
+    const err = new InfrahubError("base error");
+    expect(err.name).toBe("InfrahubError");
+    expect(err.message).toBe("base error");
+    expect(err).toBeInstanceOf(Error);
+  });
+
+  it("should work without message", () => {
+    const err = new InfrahubError();
+    expect(err.message).toBe("");
+  });
+});
+
+describe("ServerNotReachableError", () => {
+  it("should set address and message", () => {
+    const err = new ServerNotReachableError("http://localhost:8000", "Connection refused");
+    expect(err.name).toBe("ServerNotReachableError");
+    expect(err.address).toBe("http://localhost:8000");
+    expect(err.message).toBe("Connection refused");
+    expect(err).toBeInstanceOf(InfrahubError);
+    expect(err).toBeInstanceOf(Error);
+  });
+
+  it("should use default message when none provided", () => {
+    const err = new ServerNotReachableError("http://example.com");
+    expect(err.message).toBe("Unable to connect to 'http://example.com'.");
+  });
+});
+
+describe("AuthenticationError", () => {
+  it("should set name and message", () => {
+    const err = new AuthenticationError("Invalid token");
+    expect(err.name).toBe("AuthenticationError");
+    expect(err.message).toBe("Invalid token");
+    expect(err).toBeInstanceOf(InfrahubError);
+    expect(err).toBeInstanceOf(Error);
+  });
+
+  it("should use default message", () => {
+    const err = new AuthenticationError();
+    expect(err.message).toContain("Authentication Error");
+  });
+});
+
+describe("NodeNotFoundError", () => {
+  it("should set properties from options", () => {
+    const err = new NodeNotFoundError({
+      identifier: { id: "abc-123" },
+      nodeType: "InfraDevice",
+      branchName: "main",
+    });
+    expect(err.name).toBe("NodeNotFoundError");
+    expect(err.nodeType).toBe("InfraDevice");
+    expect(err.identifier).toEqual({ id: "abc-123" });
+    expect(err.branchName).toBe("main");
+    expect(err).toBeInstanceOf(InfrahubError);
+  });
+
+  it("should default nodeType to unknown", () => {
+    const err = new NodeNotFoundError({ identifier: { id: "x" } });
+    expect(err.nodeType).toBe("unknown");
+  });
+});
+
+describe("SchemaNotFoundError", () => {
+  it("should set identifier and message", () => {
+    const err = new SchemaNotFoundError("InfraDevice");
+    expect(err.name).toBe("SchemaNotFoundError");
+    expect(err.identifier).toBe("InfraDevice");
+    expect(err.message).toContain("InfraDevice");
+    expect(err).toBeInstanceOf(InfrahubError);
+  });
+});
+
+describe("BranchNotFoundError", () => {
+  it("should set identifier and message", () => {
+    const err = new BranchNotFoundError("feature-1");
+    expect(err.name).toBe("BranchNotFoundError");
+    expect(err.identifier).toBe("feature-1");
+    expect(err.message).toContain("feature-1");
+    expect(err).toBeInstanceOf(InfrahubError);
+  });
+});
+
+describe("ValidationError", () => {
+  it("should set identifier, message, and messages", () => {
+    const err = new ValidationError("name", "Name is required", ["Name cannot be empty"]);
+    expect(err.name).toBe("ValidationError");
+    expect(err.identifier).toBe("name");
+    expect(err.message).toBe("Name is required");
+    expect(err.messages).toEqual(["Name cannot be empty"]);
+    expect(err).toBeInstanceOf(InfrahubError);
+  });
+
+  it("should use default message", () => {
+    const err = new ValidationError("email");
+    expect(err.message).toContain("email");
   });
 });

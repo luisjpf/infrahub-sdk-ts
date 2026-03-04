@@ -39,8 +39,8 @@ export interface TlsProxyConfig {
 export class ProxyHttpClient implements HttpClient {
   readonly tlsProxyConfig: TlsProxyConfig;
 
-  /** Cached dispatcher promise — created lazily on first request, reused thereafter. */
-  private _dispatcherPromise: Promise<unknown | undefined> | undefined;
+  /** Cached dispatcher promise — created lazily on first request, reused thereafter. Cleared on failure to allow retry. */
+  private _dispatcherPromise: Promise<object | undefined> | undefined;
 
   constructor(config: TlsProxyConfig = {}) {
     this.tlsProxyConfig = config;
@@ -99,9 +99,12 @@ export class ProxyHttpClient implements HttpClient {
   }
 
   /** Return the cached dispatcher, creating it lazily on first call. */
-  private getDispatcher(): Promise<unknown | undefined> {
+  private getDispatcher(): Promise<object | undefined> {
     if (!this._dispatcherPromise) {
-      this._dispatcherPromise = this.createDispatcher();
+      this._dispatcherPromise = this.createDispatcher().catch((err) => {
+        this._dispatcherPromise = undefined; // allow retry on next request
+        throw err;
+      });
     }
     return this._dispatcherPromise;
   }

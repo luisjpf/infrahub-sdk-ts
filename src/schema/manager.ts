@@ -1,4 +1,4 @@
-import { SchemaNotFoundError, ValidationError } from "../errors.js";
+import { AuthenticationError, SchemaNotFoundError, ValidationError } from "../errors.js";
 import type { InfrahubTransport } from "../transport.js";
 import { isNodeSchema } from "./types.js";
 import type { GenericSchema, NodeSchema, SchemaType } from "./types.js";
@@ -88,6 +88,7 @@ export class SchemaManager {
     if (branchCache) {
       const cached = branchCache.get(kind);
       if (cached) {
+        this.touchCacheOrder(branchName);
         return cached;
       }
     }
@@ -112,6 +113,8 @@ export class SchemaManager {
 
     if (!this.cache.has(branchName)) {
       await this.fetchAll(branchName);
+    } else {
+      this.touchCacheOrder(branchName);
     }
 
     return this.cache.get(branchName) ?? new Map();
@@ -198,7 +201,7 @@ export class SchemaManager {
     );
 
     if (response.status === 401 || response.status === 403) {
-      throw new ValidationError("schemas", "Not authorized to load schemas");
+      throw new AuthenticationError("Not authorized to load schemas");
     }
 
     const data = response.data as Record<string, unknown>;
@@ -211,6 +214,13 @@ export class SchemaManager {
         warnings: [],
         schema_updated: false,
       };
+    }
+
+    if (response.status < 200 || response.status >= 300) {
+      throw new ValidationError(
+        "schemas",
+        `Unexpected response status ${response.status} from schema load`,
+      );
     }
 
     // Invalidate cache for this branch since schema may have changed
@@ -254,6 +264,10 @@ export class SchemaManager {
       undefined,
       120,
     );
+
+    if (response.status === 401 || response.status === 403) {
+      throw new AuthenticationError("Not authorized to check schemas");
+    }
 
     const data = response.data as Record<string, unknown> | null;
 

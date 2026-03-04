@@ -7,6 +7,7 @@ import { deviceSchema, siteSchema, genericDeviceSchema } from "../../fixtures/sc
 /** Create a mock transport that returns schemas from the "API". */
 function createMockTransport(): InfrahubTransport {
   return {
+    address: "http://localhost:8000",
     buildGraphQLUrl: () => "http://localhost:8000/graphql",
     get: vi.fn().mockResolvedValue({
       status: 200,

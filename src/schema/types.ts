@@ -124,7 +124,7 @@ export type SchemaType = NodeSchema | GenericSchema;
  */
 export function isNodeSchema(schema: SchemaType): schema is NodeSchema {
   if ("used_by" in schema) return false;
-  if ("default_filter" in schema || "inherit_from" in schema || "hierarchy" in schema || "human_friendly_id" in schema) return true;
+  if ("default_filter" in schema || "inherit_from" in schema || "hierarchy" in schema || "human_friendly_id" in schema || "display_labels" in schema) return true;
   // Ambiguous: no used_by and no NodeSchema-specific fields.
   // Default to NodeSchema since GenericSchema should always declare used_by.
   return true;
