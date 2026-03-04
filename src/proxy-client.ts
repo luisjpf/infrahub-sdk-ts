@@ -39,9 +39,8 @@ export interface TlsProxyConfig {
 export class ProxyHttpClient implements HttpClient {
   readonly tlsProxyConfig: TlsProxyConfig;
 
-  /** Cached dispatcher — created lazily on first request, reused thereafter. */
-  private _cachedDispatcher: unknown | undefined;
-  private _dispatcherResolved = false;
+  /** Cached dispatcher promise — created lazily on first request, reused thereafter. */
+  private _dispatcherPromise: Promise<unknown | undefined> | undefined;
 
   constructor(config: TlsProxyConfig = {}) {
     this.tlsProxyConfig = config;
@@ -100,11 +99,11 @@ export class ProxyHttpClient implements HttpClient {
   }
 
   /** Return the cached dispatcher, creating it lazily on first call. */
-  private async getDispatcher(): Promise<unknown | undefined> {
-    if (this._dispatcherResolved) return this._cachedDispatcher;
-    this._cachedDispatcher = await this.createDispatcher();
-    this._dispatcherResolved = true;
-    return this._cachedDispatcher;
+  private getDispatcher(): Promise<unknown | undefined> {
+    if (!this._dispatcherPromise) {
+      this._dispatcherPromise = this.createDispatcher();
+    }
+    return this._dispatcherPromise;
   }
 
   /**
@@ -150,7 +149,14 @@ export class ProxyHttpClient implements HttpClient {
         }
       }
     } catch {
-      // undici not available — fall through without dispatcher
+      const features: string[] = [];
+      if (needsProxy) features.push(`proxy (${this.tlsProxyConfig.proxyUrl})`);
+      if (this.tlsProxyConfig.tlsInsecure) features.push("tlsInsecure");
+      if (this.tlsProxyConfig.tlsCaFile) features.push(`tlsCaFile (${this.tlsProxyConfig.tlsCaFile})`);
+      console.warn(
+        `[infrahub-sdk] undici not available — ${features.join(", ")} config will be ignored. ` +
+        `Install undici as a dependency to enable proxy/TLS support.`,
+      );
     }
     return undefined;
   }

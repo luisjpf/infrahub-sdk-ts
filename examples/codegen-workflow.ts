@@ -12,6 +12,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+// In your own project: import { generateFromSchema } from "infrahub-sdk/codegen";
 import { generateFromSchema } from "../src/codegen/index.js";
 
 // Sample schema (normally exported via: npx infrahub-sdk schema export)

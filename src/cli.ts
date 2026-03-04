@@ -10,7 +10,7 @@
 
 import { readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { Command } from "commander";
 import { codegenCommand } from "./cli/codegen-cmd.js";
 import { schemaCommand } from "./cli/schema-cmd.js";
@@ -42,7 +42,7 @@ export function createProgram(): Command {
 // Run when executed directly (not imported for testing).
 if (typeof process !== "undefined" && process.argv[1]) {
   try {
-    if (import.meta.url === new URL(`file://${process.argv[1]}`).href) {
+    if (import.meta.url === pathToFileURL(process.argv[1]).href) {
       createProgram().parse();
     }
   } catch {

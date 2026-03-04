@@ -9,6 +9,7 @@
  *   npx tsx examples/basic-crud.ts
  */
 
+// In your own project: import { InfrahubClient } from "infrahub-sdk";
 import { InfrahubClient } from "../src/index.js";
 
 async function main() {
