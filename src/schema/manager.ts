@@ -1,5 +1,6 @@
-import { SchemaNotFoundError, ValidationError } from "../errors.js";
+import { AuthenticationError, SchemaNotFoundError, ValidationError } from "../errors.js";
 import type { InfrahubTransport } from "../transport.js";
+import { isNodeSchema } from "./types.js";
 import type { GenericSchema, NodeSchema, SchemaType } from "./types.js";
 
 /** Response shape from /api/schema?branch=X */
@@ -65,10 +66,15 @@ export class SchemaManager {
 
   /** Per-branch schema cache: branch → (kind → schema) */
   private cache: Map<string, Map<string, SchemaType>> = new Map();
+  /** Insertion-order tracking for LRU eviction of branch caches. */
+  private cacheOrder: string[] = [];
+  /** Maximum number of branch caches to retain (0 = unlimited). */
+  private readonly maxCacheBranches: number;
 
-  constructor(transport: InfrahubTransport, defaultBranch: string) {
+  constructor(transport: InfrahubTransport, defaultBranch: string, maxCacheBranches: number = 20) {
     this.transport = transport;
     this.defaultBranch = defaultBranch;
+    this.maxCacheBranches = maxCacheBranches;
   }
 
   /**
@@ -82,6 +88,7 @@ export class SchemaManager {
     if (branchCache) {
       const cached = branchCache.get(kind);
       if (cached) {
+        this.touchCacheOrder(branchName);
         return cached;
       }
     }
@@ -106,6 +113,8 @@ export class SchemaManager {
 
     if (!this.cache.has(branchName)) {
       await this.fetchAll(branchName);
+    } else {
+      this.touchCacheOrder(branchName);
     }
 
     return this.cache.get(branchName) ?? new Map();
@@ -115,7 +124,7 @@ export class SchemaManager {
    * Fetch all schemas from the API for a given branch and populate the cache.
    */
   private async fetchAll(branch: string): Promise<void> {
-    const url = `${this.transport.buildGraphQLUrl().replace("/graphql", "")}/api/schema?branch=${encodeURIComponent(branch)}`;
+    const url = `${this.buildBaseUrl()}/api/schema?branch=${encodeURIComponent(branch)}`;
     const response = await this.transport.get(url);
 
     const data = response.data as SchemaAPIResponse;
@@ -134,6 +143,7 @@ export class SchemaManager {
     }
 
     this.cache.set(branch, branchCache);
+    this.touchCacheOrder(branch);
   }
 
   /** Manually set a schema in the cache (useful for testing). */
@@ -143,14 +153,17 @@ export class SchemaManager {
       this.cache.set(branchName, new Map());
     }
     this.cache.get(branchName)!.set(kind, schema);
+    this.touchCacheOrder(branchName);
   }
 
   /** Clear the cache for a specific branch or all branches. */
   clearCache(branch?: string): void {
     if (branch) {
       this.cache.delete(branch);
+      this.cacheOrder = this.cacheOrder.filter((b) => b !== branch);
     } else {
       this.cache.clear();
+      this.cacheOrder = [];
     }
   }
 
@@ -184,11 +197,11 @@ export class SchemaManager {
       url,
       { schemas },
       undefined,
-      Math.max(120, 60),
+      120,
     );
 
     if (response.status === 401 || response.status === 403) {
-      throw new ValidationError("schemas", "Not authorized to load schemas");
+      throw new AuthenticationError("Not authorized to load schemas");
     }
 
     const data = response.data as Record<string, unknown>;
@@ -201,6 +214,13 @@ export class SchemaManager {
         warnings: [],
         schema_updated: false,
       };
+    }
+
+    if (response.status < 200 || response.status >= 300) {
+      throw new ValidationError(
+        "schemas",
+        `Unexpected response status ${response.status} from schema load`,
+      );
     }
 
     // Invalidate cache for this branch since schema may have changed
@@ -242,8 +262,12 @@ export class SchemaManager {
       url,
       { schemas },
       undefined,
-      Math.max(120, 60),
+      120,
     );
+
+    if (response.status === 401 || response.status === 403) {
+      throw new AuthenticationError("Not authorized to check schemas");
+    }
 
     const data = response.data as Record<string, unknown> | null;
 
@@ -296,7 +320,7 @@ export class SchemaManager {
 
       const nsExport = result.namespaces[ns]!;
 
-      if (isNodeSchemaType(schema)) {
+      if (isNodeSchema(schema)) {
         nsExport.nodes.push(schema);
       } else {
         nsExport.generics.push(schema as GenericSchema);
@@ -306,13 +330,23 @@ export class SchemaManager {
     return result;
   }
 
-  /** Build the base API URL (without /graphql). */
+  /** Build the base API URL from the transport's configured address. */
   private buildBaseUrl(): string {
-    return this.transport.buildGraphQLUrl().replace(/\/graphql$/, "");
+    return this.transport.address;
   }
-}
 
-/** Type guard: does this schema have NodeSchema-specific fields? */
-function isNodeSchemaType(schema: SchemaType): schema is NodeSchema {
-  return "inherit_from" in schema || "default_filter" in schema || "hierarchy" in schema;
+  /** Update LRU order for a branch and evict oldest if over limit. */
+  private touchCacheOrder(branch: string): void {
+    this.cacheOrder = this.cacheOrder.filter((b) => b !== branch);
+    this.cacheOrder.push(branch);
+
+    if (this.maxCacheBranches > 0) {
+      while (this.cacheOrder.length > this.maxCacheBranches) {
+        const oldest = this.cacheOrder.shift();
+        if (oldest) {
+          this.cache.delete(oldest);
+        }
+      }
+    }
+  }
 }

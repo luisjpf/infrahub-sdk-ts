@@ -1,5 +1,14 @@
+import { readFileSync } from "node:fs";
+import { resolve, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createProgram } from "../../../src/cli.js";
+
+const pkgVersion = (
+  JSON.parse(
+    readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), "../../..", "package.json"), "utf-8"),
+  ) as { version: string }
+).version;
 
 describe("CLI program", () => {
   it("creates a program with the correct name", () => {
@@ -28,7 +37,7 @@ describe("CLI program", () => {
 
   it("has version option", () => {
     const program = createProgram();
-    expect(program.version()).toBe("0.1.0");
+    expect(program.version()).toBe(pkgVersion);
   });
 });
 
@@ -37,9 +46,13 @@ describe("codegen command parsing", () => {
     const program = createProgram();
     program.exitOverride();
 
+    const codegen = program.commands.find((c) => c.name() === "codegen")!;
+    codegen.exitOverride();
+    codegen.configureOutput({ writeErr: () => {}, writeOut: () => {} });
+
     expect(() => {
       program.parse(["codegen"], { from: "user" });
-    }).toThrow();
+    }).toThrow(/required|schema/i);
   });
 
   it("parses --schema and --output options", () => {

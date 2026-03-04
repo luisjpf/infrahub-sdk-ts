@@ -17,6 +17,20 @@ function okResponse(data: unknown): HttpResponse {
 }
 
 describe("InfrahubTransport", () => {
+  describe("address", () => {
+    it("should return the configured server address", () => {
+      const config = createConfig({ address: "http://localhost:8000" });
+      const transport = new InfrahubTransport(config);
+      expect(transport.address).toBe("http://localhost:8000");
+    });
+
+    it("should strip trailing slash from address", () => {
+      const config = createConfig({ address: "http://localhost:8000/" });
+      const transport = new InfrahubTransport(config);
+      expect(transport.address).not.toContain("/$");
+    });
+  });
+
   describe("buildGraphQLUrl", () => {
     it("should build base GraphQL URL", () => {
       const config = createConfig({ address: "http://localhost:8000" });
@@ -96,13 +110,12 @@ describe("InfrahubTransport", () => {
       expect(callArgs.body).toEqual({ username: "admin", password: "secret" });
     });
 
-    it("should do nothing when no credentials", async () => {
+    it("should throw when no credentials configured", async () => {
       const handler = vi.fn();
       const config = createConfig({ apiToken: "token" });
       const transport = new InfrahubTransport(config, createMockHttpClient(handler));
 
-      await transport.login();
-
+      await expect(transport.login()).rejects.toThrow(AuthenticationError);
       expect(handler).not.toHaveBeenCalled();
     });
 
@@ -170,6 +183,30 @@ describe("InfrahubTransport", () => {
       // Should have called: login, post (401), refresh, post (200)
       expect(callCount).toBe(4);
       expect(response.status).toBe(200);
+    });
+
+    it("should throw AuthenticationError when refresh returns non-200", async () => {
+      const handler = vi.fn().mockImplementation(async (opts: HttpRequestOptions) => {
+        if (opts.url.includes("/api/auth/login")) {
+          return okResponse({ access_token: "access1", refresh_token: "refresh1" });
+        }
+        if (opts.url.includes("/api/auth/refresh")) {
+          return { status: 401, data: { error: "Refresh token expired" }, headers: {} };
+        }
+        return {
+          status: 401,
+          data: { errors: [{ message: "Expired Signature" }] },
+          headers: {},
+        };
+      });
+
+      const config = createConfig({ username: "admin", password: "secret" });
+      const transport = new InfrahubTransport(config, createMockHttpClient(handler));
+
+      await transport.login();
+      await expect(
+        transport.post("http://localhost:8000/graphql", {}),
+      ).rejects.toThrow(AuthenticationError);
     });
   });
 

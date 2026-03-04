@@ -4,3 +4,20 @@ dist/
 coverage/
 *.tsbuildinfo
 .DS_Store
+
+# Environment / secrets
+.env
+.env.*
+
+# Claude / AI
+.claude/
+
+# Editor configs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Certificates / keys
+*.key
+*.pem

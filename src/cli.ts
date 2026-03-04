@@ -8,9 +8,22 @@
  *   version   - Show SDK version
  */
 
+import { readFileSync } from "node:fs";
+import { resolve, dirname } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { Command } from "commander";
 import { codegenCommand } from "./cli/codegen-cmd.js";
 import { schemaCommand } from "./cli/schema-cmd.js";
+
+function readVersion(): string {
+  try {
+    const dir = dirname(fileURLToPath(import.meta.url));
+    const pkg = JSON.parse(readFileSync(resolve(dir, "..", "package.json"), "utf-8")) as { version: string };
+    return pkg.version;
+  } catch {
+    return "0.0.0";
+  }
+}
 
 export function createProgram(): Command {
   const program = new Command();
@@ -18,7 +31,7 @@ export function createProgram(): Command {
   program
     .name("infrahub-sdk")
     .description("Infrahub TypeScript SDK CLI")
-    .version("0.1.0");
+    .version(readVersion());
 
   program.addCommand(codegenCommand());
   program.addCommand(schemaCommand());
@@ -26,15 +39,15 @@ export function createProgram(): Command {
   return program;
 }
 
-// Run when executed directly (not imported for testing)
-const isDirectExecution =
-  typeof process !== "undefined" &&
-  process.argv[1] &&
-  (process.argv[1].endsWith("/cli.js") ||
-    process.argv[1].endsWith("/cli.ts") ||
-    process.argv[1].endsWith("/infrahub-sdk"));
-
-if (isDirectExecution) {
-  const program = createProgram();
-  program.parse();
+// Run when executed directly (not imported for testing).
+if (typeof process !== "undefined" && process.argv[1]) {
+  let isDirect = false;
+  try {
+    isDirect = import.meta.url === pathToFileURL(process.argv[1]).href;
+  } catch {
+    // URL parsing failed — not direct execution
+  }
+  if (isDirect) {
+    createProgram().parse();
+  }
 }

@@ -7,6 +7,7 @@ import { deviceSchema, siteSchema, genericDeviceSchema } from "../../fixtures/sc
 /** Create a mock transport that returns schemas from the "API". */
 function createMockTransport(): InfrahubTransport {
   return {
+    address: "http://localhost:8000",
     buildGraphQLUrl: () => "http://localhost:8000/graphql",
     get: vi.fn().mockResolvedValue({
       status: 200,
@@ -104,6 +105,64 @@ describe("SchemaManager", () => {
       manager.clearCache();
       expect(manager.hasCached("InfraDevice", "main")).toBe(false);
       expect(manager.hasCached("InfraDevice", "feature-1")).toBe(false);
+    });
+  });
+
+  describe("cache eviction (touchCacheOrder)", () => {
+    it("should evict oldest branch cache when exceeding maxCacheBranches", async () => {
+      // Create a manager with maxCacheBranches = 3
+      const smallCacheManager = new SchemaManager(transport, "main", 3);
+
+      // Fetch schemas for 4 different branches
+      await smallCacheManager.get("InfraDevice", "branch-1");
+      await smallCacheManager.get("InfraDevice", "branch-2");
+      await smallCacheManager.get("InfraDevice", "branch-3");
+
+      // All three should be cached
+      expect(smallCacheManager.hasCached("InfraDevice", "branch-1")).toBe(true);
+      expect(smallCacheManager.hasCached("InfraDevice", "branch-2")).toBe(true);
+      expect(smallCacheManager.hasCached("InfraDevice", "branch-3")).toBe(true);
+
+      // Adding a 4th branch should evict branch-1 (oldest)
+      await smallCacheManager.get("InfraDevice", "branch-4");
+
+      expect(smallCacheManager.hasCached("InfraDevice", "branch-1")).toBe(false);
+      expect(smallCacheManager.hasCached("InfraDevice", "branch-2")).toBe(true);
+      expect(smallCacheManager.hasCached("InfraDevice", "branch-3")).toBe(true);
+      expect(smallCacheManager.hasCached("InfraDevice", "branch-4")).toBe(true);
+    });
+
+    it("should evict multiple branches when heavily exceeded", async () => {
+      const tinyCacheManager = new SchemaManager(transport, "main", 2);
+
+      await tinyCacheManager.get("InfraDevice", "b1");
+      await tinyCacheManager.get("InfraDevice", "b2");
+      await tinyCacheManager.get("InfraDevice", "b3");
+
+      // b1 should have been evicted
+      expect(tinyCacheManager.hasCached("InfraDevice", "b1")).toBe(false);
+      expect(tinyCacheManager.hasCached("InfraDevice", "b2")).toBe(true);
+      expect(tinyCacheManager.hasCached("InfraDevice", "b3")).toBe(true);
+    });
+
+    it("should promote re-fetched branch to end of LRU order", async () => {
+      const lruManager = new SchemaManager(transport, "main", 3);
+
+      await lruManager.get("InfraDevice", "b1");
+      await lruManager.get("InfraDevice", "b2");
+      await lruManager.get("InfraDevice", "b3");
+
+      // Clear b1's cache, then re-fetch it to trigger fetchAll + touchCacheOrder
+      lruManager.clearCache("b1");
+      await lruManager.get("InfraDevice", "b1");
+
+      // Now adding b4 should evict b2 (oldest that hasn't been re-fetched)
+      await lruManager.get("InfraDevice", "b4");
+
+      expect(lruManager.hasCached("InfraDevice", "b1")).toBe(true);
+      expect(lruManager.hasCached("InfraDevice", "b2")).toBe(false);
+      expect(lruManager.hasCached("InfraDevice", "b3")).toBe(true);
+      expect(lruManager.hasCached("InfraDevice", "b4")).toBe(true);
     });
   });
 });

@@ -90,6 +90,11 @@ export class InfrahubTransport {
     }
   }
 
+  /** The configured server address (without trailing slash). */
+  get address(): string {
+    return this.config.address;
+  }
+
   /** Build the GraphQL URL for a given branch and optional timestamp. */
   buildGraphQLUrl(branchName?: string, at?: string): string {
     let url = `${this.config.address}/graphql`;
@@ -141,7 +146,22 @@ export class InfrahubTransport {
     if (this.accessToken) {
       headers["Authorization"] = `Bearer ${this.accessToken}`;
     }
-    return this.doRequest("GET", url, undefined, headers, timeout);
+
+    let response = await this.doRequest("GET", url, undefined, headers, timeout);
+
+    // Handle token refresh on 401 "Expired Signature"
+    if (response.status === 401) {
+      const data = response.data as Record<string, unknown> | null;
+      const errors = (data?.errors ?? []) as Array<Record<string, unknown>>;
+      const messages = errors.map((e) => e.message as string);
+      if (messages.includes("Expired Signature") && this.refreshToken) {
+        await this.login(true);
+        headers["Authorization"] = `Bearer ${this.accessToken}`;
+        response = await this.doRequest("GET", url, undefined, headers, timeout);
+      }
+    }
+
+    return response;
   }
 
   /**
@@ -160,13 +180,19 @@ export class InfrahubTransport {
         timeout: this.config.timeout,
       });
 
+      if (response.status !== 200) {
+        throw new AuthenticationError("Token refresh failed");
+      }
+
       const data = response.data as Record<string, string>;
       this.accessToken = data.access_token ?? "";
       return;
     }
 
     if (!this.config.username || !this.config.password) {
-      return;
+      throw new AuthenticationError(
+        "Login failed: no credentials configured. Set username/password or use API token authentication.",
+      );
     }
 
     const response = await this.httpClient.request({

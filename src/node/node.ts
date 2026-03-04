@@ -96,6 +96,11 @@ export class InfrahubNode {
     return attr;
   }
 
+  /** Set an attribute value by name. Marks the attribute as mutated. */
+  setAttribute(name: string, value: unknown): void {
+    this.getAttribute(name).value = value;
+  }
+
   /** Check if an attribute exists. */
   hasAttribute(name: string): boolean {
     return this._attributes.has(name);
@@ -123,16 +128,13 @@ export class InfrahubNode {
     const components: string[] = [];
     for (const path of this.schema.human_friendly_id) {
       // Simple case: attribute value reference like "name__value"
-      const parts = path.split("__");
-      if (parts.length >= 1) {
-        const attrName = parts[0]!;
-        if (this._attributes.has(attrName)) {
-          const value = this._attributes.get(attrName)!.value;
-          if (value === null || value === undefined) return null;
-          components.push(String(value));
-        } else {
-          return null;
-        }
+      const attrName = path.split("__")[0]!;
+      if (this._attributes.has(attrName)) {
+        const value = this._attributes.get(attrName)!.value;
+        if (value === null || value === undefined) return null;
+        components.push(String(value));
+      } else {
+        return null;
       }
     }
 

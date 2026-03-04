@@ -36,19 +36,28 @@
     "infrastructure",
     "graphql"
   ],
-  "author": "Luis",
-  "license": "MIT",
+  "author": "OpsMill",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/opsmill/infrahub-sdk-ts.git"
+  },
+  "bugs": {
+    "url": "https://github.com/opsmill/infrahub-sdk-ts/issues"
+  },
+  "homepage": "https://github.com/opsmill/infrahub-sdk-ts#readme",
   "dependencies": {
     "commander": "^14.0.3",
     "zod": "^3.24.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "@vitest/coverage-v8": "^3.2.4",
     "tsx": "^4.0.0",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20.0.0"
   }
 }

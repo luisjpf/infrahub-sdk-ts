@@ -1,6 +1,11 @@
-# infrahub-sdk-ts
+# infrahub-sdk
 
-TypeScript SDK for [Infrahub](https://github.com/opsmill/infrahub) — an infrastructure management platform.
+[![CI](https://github.com/opsmill/infrahub-sdk-ts/actions/workflows/ci.yml/badge.svg)](https://github.com/opsmill/infrahub-sdk-ts/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/infrahub-sdk)](https://www.npmjs.com/package/infrahub-sdk)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![Node.js](https://img.shields.io/badge/node-%3E%3D18-brightgreen)](https://nodejs.org)
+
+TypeScript SDK for [Infrahub](https://github.com/opsmill/infrahub) — an infrastructure management platform that provides a unified API for network and infrastructure data.
 
 ## Installation
 
@@ -25,13 +30,22 @@ const device = await client.create("InfraDevice", {
 });
 await client.save(device);
 
-// Fetch nodes
+// Fetch all nodes of a kind
 const devices = await client.all("InfraDevice");
+
+// Get a single node by ID
 const site = await client.get("InfraSite", { id: "site-uuid" });
 
-// Branch operations
-await client.branch.create("feature-branch");
-const branchedClient = client.clone("feature-branch");
+// Filter nodes
+const active = await client.filters("InfraDevice", {
+  role__value: "spine",
+});
+
+// Count nodes
+const total = await client.count("InfraDevice");
+
+// Delete a node
+await client.delete("InfraDevice", device.id!);
 ```
 
 ## Code Generation
@@ -41,14 +55,9 @@ Generate typed TypeScript interfaces from your Infrahub schema for compile-time 
 ### 1. Export your schema
 
 ```bash
-# From a running Infrahub server
-npx infrahub-sdk schema export --address http://localhost:8000 --output schema.json
-
-# Or with API token and specific branch
 npx infrahub-sdk schema export \
   --address http://localhost:8000 \
   --api-token your-token \
-  --branch main \
   --output schema.json
 ```
 
@@ -68,7 +77,7 @@ src/generated/
 └── index.ts               # Barrel exports
 ```
 
-### 3. Use typed client
+### 3. Use the typed client
 
 ```typescript
 import { InfrahubClient } from "infrahub-sdk";
@@ -79,9 +88,9 @@ const typed = createTypedClient(client);
 
 // Type-safe CRUD — IDE autocompletion for fields
 const device = await typed.device.create({
-  name: "router1",     // required: string
-  description: "...",  // optional: string
-  site: { id: "..." }, // relationship reference
+  name: "router1",
+  description: "Core router",
+  site: { id: "site-uuid" },
 });
 
 const allDevices = await typed.device.all();
@@ -93,14 +102,33 @@ await typed.device.delete("device-uuid");
 
 ```bash
 npx infrahub-sdk --help
-npx infrahub-sdk codegen --help
-npx infrahub-sdk schema export --help
 ```
 
 | Command | Description |
 |---------|-------------|
-| `codegen -s <file> [-o <dir>]` | Generate types from schema JSON |
-| `schema export [-a <url>] [-o <file>]` | Export schema from server |
+| `codegen -s <file> [-o <dir>]` | Generate TypeScript types from schema JSON |
+| `schema export [-a <url>] [-o <file>]` | Export schema from a running Infrahub server |
+
+### Examples
+
+```bash
+# Export schema from a running server
+npx infrahub-sdk schema export \
+  --address http://localhost:8000 \
+  --branch main \
+  --output schema.json
+
+# Generate types from the exported schema
+npx infrahub-sdk codegen \
+  --schema schema.json \
+  --output src/generated
+
+# Generate without generic schemas
+npx infrahub-sdk codegen \
+  --schema schema.json \
+  --output src/generated \
+  --no-generics
+```
 
 ## Features
 
@@ -115,31 +143,63 @@ npx infrahub-sdk schema export --help
 - **Request recording** — record/playback for testing
 - **TLS/proxy support** — custom CA, insecure mode, HTTP proxy
 - **Configurable retry** — exponential backoff with jitter
-- **Code generation** — typed interfaces from schema
+- **Code generation** — typed interfaces and typed client from schema
 - **CLI tool** — codegen and schema export commands
 
 ## Configuration
 
 ```typescript
 const client = new InfrahubClient({
-  address: "http://localhost:8000",  // or INFRAHUB_ADDRESS env var
-  apiToken: "your-token",           // or INFRAHUB_API_TOKEN env var
+  // Connection
+  address: "http://localhost:8000",   // or INFRAHUB_ADDRESS env var
+  apiToken: "your-token",            // or INFRAHUB_API_TOKEN env var
+
+  // Branch
   defaultBranch: "main",
+
+  // Timeouts & concurrency
   timeout: 60,
   maxConcurrentExecution: 5,
-  retryOn: [502, 503, 504],
-  retryDelay: 1000,
-  retryBackoff: "exponential",
-  retryMaxDelay: 30000,
+  paginationSize: 50,
+
+  // Retry policy
+  retryOnFailure: false,
+  retryDelay: 5,
+  retryBackoff: "exponential",       // "constant" | "exponential"
+  retryMaxDelay: 60,
   retryJitter: true,
+
+  // TLS / proxy
+  proxyUrl: "http://proxy:3128",
+  tlsInsecure: false,
+  tlsCaFile: "/path/to/ca.pem",
 });
+```
+
+## Development
+
+```bash
+# Install dependencies
+npm install
+
+# Build
+npm run build
+
+# Run tests
+npm test
+
+# Run tests with coverage (enforces 90% thresholds)
+npm run test:coverage
+
+# Type-check without emitting
+npm run lint
 ```
 
 ## Requirements
 
-- Node.js >= 18.0.0
+- Node.js >= 20.0.0
 - TypeScript >= 5.7 (for development)
 
 ## License
 
-MIT
+[Apache-2.0](LICENSE)
