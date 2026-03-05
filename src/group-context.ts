@@ -14,7 +14,7 @@ export type ClientMode = "default" | "tracking";
 
 /** Properties that configure a group context. */
 export interface GroupContextProperties {
-  /** Tracking identifier (e.g., "python-sdk", "provisioner-v2") */
+  /** Tracking identifier (e.g., "infrahub-sdk", "provisioner-v2") */
   identifier: string;
   /** Parameters used for deterministic group naming (hashed) */
   params?: Record<string, string>;
