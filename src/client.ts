@@ -26,6 +26,15 @@ import { NodeStore } from "./store.js";
 import { InfrahubTransport } from "./transport.js";
 import type { HttpClient, Logger } from "./types.js";
 
+/** Options for the object-form of executeGraphQL. */
+export interface GraphQLExecuteOptions {
+  query: string;
+  variables?: Record<string, unknown>;
+  tracker?: string;
+  branch?: string;
+  timeout?: number;
+}
+
 /**
  * Main client for interacting with the Infrahub API.
  * Provides CRUD operations on nodes, branch management, schema access,
@@ -422,14 +431,29 @@ export class InfrahubClient {
 
   /**
    * Execute a raw GraphQL query or mutation.
+   *
+   * Supports two call styles:
+   * - Positional: `executeGraphQL(query, variables?, tracker?, branch?, timeout?)`
+   * - Options object: `executeGraphQL({ query, variables?, tracker?, branch?, timeout? })`
    */
   async executeGraphQL(
-    query: string,
+    queryOrOptions: string | GraphQLExecuteOptions,
     variables?: Record<string, unknown>,
     tracker?: string,
     branchName?: string,
     timeout?: number,
   ): Promise<Record<string, unknown>> {
+    let query: string;
+    if (typeof queryOrOptions === "object") {
+      query = queryOrOptions.query;
+      variables = queryOrOptions.variables;
+      tracker = queryOrOptions.tracker;
+      branchName = queryOrOptions.branch;
+      timeout = queryOrOptions.timeout;
+    } else {
+      query = queryOrOptions;
+    }
+
     const branch = branchName ?? this.defaultBranch;
     const url = this.transport.buildGraphQLUrl(branch);
 

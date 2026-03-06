@@ -1,7 +1,17 @@
 import { AuthenticationError, SchemaNotFoundError, ValidationError } from "../errors.js";
-import type { InfrahubTransport } from "../transport.js";
+import type { HttpResponse } from "../types.js";
 import { isNodeSchema } from "./types.js";
 import type { GenericSchema, NodeSchema, SchemaType } from "./types.js";
+
+/**
+ * Minimal transport interface that SchemaManager depends on.
+ * Decouples SchemaManager from the concrete InfrahubTransport class.
+ */
+export interface SchemaTransport {
+  readonly address: string;
+  get(url: string, extraHeaders?: Record<string, string>, timeout?: number): Promise<HttpResponse>;
+  post(url: string, payload: Record<string, unknown>, extraHeaders?: Record<string, string>, timeout?: number): Promise<HttpResponse>;
+}
 
 /** Response shape from /api/schema?branch=X */
 interface SchemaAPIResponse {
@@ -61,7 +71,7 @@ const RESTRICTED_NAMESPACES = new Set([
  * Mirrors Python SDK's `InfrahubSchema`.
  */
 export class SchemaManager {
-  private readonly transport: InfrahubTransport;
+  private readonly transport: SchemaTransport;
   private readonly defaultBranch: string;
 
   /** Per-branch schema cache: branch → (kind → schema) */
@@ -71,7 +81,7 @@ export class SchemaManager {
   /** Maximum number of branch caches to retain (0 = unlimited). */
   private readonly maxCacheBranches: number;
 
-  constructor(transport: InfrahubTransport, defaultBranch: string, maxCacheBranches: number = 20) {
+  constructor(transport: SchemaTransport, defaultBranch: string, maxCacheBranches: number = 20) {
     this.transport = transport;
     this.defaultBranch = defaultBranch;
     this.maxCacheBranches = maxCacheBranches;

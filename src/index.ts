@@ -1,5 +1,6 @@
 // Main client
 export { InfrahubClient } from "./client.js";
+export type { GraphQLExecuteOptions } from "./client.js";
 
 // Configuration
 export type { InfrahubConfig, InfrahubConfigInput } from "./config.js";
@@ -55,6 +56,7 @@ export type {
   SchemaCheckResponse,
   SchemaExport,
   NamespaceExport,
+  SchemaTransport,
 } from "./schema/index.js";
 
 // Node

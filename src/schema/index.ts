@@ -1,4 +1,5 @@
 export { SchemaManager } from "./manager.js";
+export type { SchemaTransport } from "./manager.js";
 export type {
   SchemaLoadResponse,
   SchemaWarning,
