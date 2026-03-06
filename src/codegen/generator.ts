@@ -359,7 +359,7 @@ function generateTypedClientFile(
     const kind = schema.kind;
     lines.push(`    ${lcFirst(schema.name)}: {`);
     lines.push(
-      `      create: (data) => client.create("${kind}", data as unknown as Record<string, unknown>),`,
+      `      create: (data) => client.create("${kind}", data as Record<string, unknown>),`,
     );
     lines.push(
       `      get: (options) => client.get("${kind}", options),`,
