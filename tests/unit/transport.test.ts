@@ -395,7 +395,7 @@ describe("InfrahubTransport", () => {
       expect(transport.computeRetryDelay(3)).toBe(30000);
     });
 
-    it("should add jitter when enabled", () => {
+    it("should add jitter when enabled (deterministic via stubbed Math.random)", () => {
       const config = createConfig({
         retryBackoff: "constant",
         retryDelay: 10,
@@ -403,21 +403,22 @@ describe("InfrahubTransport", () => {
       });
       const transport = new InfrahubTransport(config, createMockHttpClient(vi.fn()));
 
-      // Run multiple times and check variance
-      const delays = new Set<number>();
-      for (let i = 0; i < 20; i++) {
-        delays.add(transport.computeRetryDelay(0));
-      }
+      // Stub Math.random to return deterministic values
+      const randomSpy = vi.spyOn(Math, "random");
 
-      // With jitter, we should get different values
-      // With +/- 25%, values should be in range [7500, 12500]
-      for (const delay of delays) {
-        expect(delay).toBeGreaterThanOrEqual(7500);
-        expect(delay).toBeLessThanOrEqual(12500);
-      }
+      // Math.random() = 0.0 → jitter factor = 0.75 → 10000 * 0.75 = 7500
+      randomSpy.mockReturnValueOnce(0.0);
+      expect(transport.computeRetryDelay(0)).toBe(7500);
 
-      // Very unlikely to get all same values with random jitter
-      expect(delays.size).toBeGreaterThan(1);
+      // Math.random() = 0.5 → jitter factor = 1.0 → 10000 * 1.0 = 10000
+      randomSpy.mockReturnValueOnce(0.5);
+      expect(transport.computeRetryDelay(0)).toBe(10000);
+
+      // Math.random() = 1.0 → jitter factor = 1.25 → 10000 * 1.25 = 12500
+      randomSpy.mockReturnValueOnce(1.0);
+      expect(transport.computeRetryDelay(0)).toBe(12500);
+
+      randomSpy.mockRestore();
     });
 
     it("should not add jitter when disabled", () => {

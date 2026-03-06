@@ -37,6 +37,7 @@ describe("InfrahubBatch", () => {
   });
 
   it("should respect concurrency limit", async () => {
+    vi.useFakeTimers();
     let concurrent = 0;
     let maxConcurrent = 0;
 
@@ -55,7 +56,12 @@ describe("InfrahubBatch", () => {
     batch.add(createTask());
     batch.add(createTask());
 
-    await batch.execute();
+    const executePromise = batch.execute();
+    // Advance timers to let all tasks complete
+    await vi.advanceTimersByTimeAsync(100);
+    await executePromise;
+
+    vi.useRealTimers();
 
     // Max concurrent should not exceed 2
     expect(maxConcurrent).toBeLessThanOrEqual(2);

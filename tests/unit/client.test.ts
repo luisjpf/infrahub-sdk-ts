@@ -321,6 +321,26 @@ describe("InfrahubClient", () => {
       ).rejects.toThrow(GraphQLError);
     });
 
+    it("should accept options-object form", async () => {
+      const { client, requests } = createTestClient({
+        InfrahubInfo: { version: "2.0.0" },
+      });
+
+      const result = await client.executeGraphQL({
+        query: "query { InfrahubInfo { version } }",
+        branch: "develop",
+        tracker: "my-tracker",
+      });
+
+      expect(result.InfrahubInfo).toEqual({ version: "2.0.0" });
+
+      // Verify branch and tracker were applied
+      const graphqlReqs = requests.filter((r) => r.url.includes("/graphql"));
+      const lastReq = graphqlReqs[graphqlReqs.length - 1]!;
+      expect(lastReq.url).toContain("/graphql/develop");
+      expect((lastReq.headers as Record<string, string>)["X-Infrahub-Tracker"]).toBe("my-tracker");
+    });
+
     it("should throw AuthenticationError on 401", async () => {
       const httpClient: HttpClient = {
         request: vi.fn().mockResolvedValue({
@@ -338,6 +358,93 @@ describe("InfrahubClient", () => {
       await expect(
         client.executeGraphQL("query { test }"),
       ).rejects.toThrow(AuthenticationError);
+    });
+  });
+
+  describe("allocateNextIpAddress", () => {
+    it("should allocate an IP address from a pool", async () => {
+      const { client, requests } = createTestClient({
+        InfrahubIPAddressPoolGetResource: {
+          ok: true,
+          node: {
+            id: "addr-1",
+            kind: "InfraIPAddress",
+            identifier: null,
+            display_label: "10.0.0.1/32",
+          },
+        },
+      });
+
+      const result = await client.allocateNextIpAddress({
+        resourcePoolId: "pool-1",
+      });
+
+      expect(result.ok).toBe(true);
+      expect(result.node).toBeDefined();
+      expect(result.node!.id).toBe("addr-1");
+      expect(result.node!.kind).toBe("InfraIPAddress");
+
+      const graphqlReqs = requests.filter((r) => r.url.includes("/graphql") && r.body);
+      const body = graphqlReqs[graphqlReqs.length - 1]?.body as Record<string, string>;
+      expect(body.query).toContain("InfrahubIPAddressPoolGetResource");
+    });
+
+    it("should handle failed allocation", async () => {
+      const { client } = createTestClient({
+        InfrahubIPAddressPoolGetResource: {
+          ok: false,
+          node: null,
+        },
+      });
+
+      const result = await client.allocateNextIpAddress({
+        resourcePoolId: "pool-empty",
+      });
+
+      expect(result.ok).toBe(false);
+      expect(result.node).toBeNull();
+    });
+  });
+
+  describe("allocateNextIpPrefix", () => {
+    it("should allocate an IP prefix from a pool", async () => {
+      const { client, requests } = createTestClient({
+        InfrahubIPPrefixPoolGetResource: {
+          ok: true,
+          node: {
+            id: "prefix-1",
+            kind: "InfraIPPrefix",
+            identifier: "subnet-a",
+            display_label: "10.0.0.0/24",
+          },
+        },
+      });
+
+      const result = await client.allocateNextIpPrefix({
+        resourcePoolId: "pool-2",
+        prefixLength: 24,
+        memberType: "prefix",
+      });
+
+      expect(result.ok).toBe(true);
+      expect(result.node).toBeDefined();
+      expect(result.node!.id).toBe("prefix-1");
+      expect(result.node!.identifier).toBe("subnet-a");
+
+      const graphqlReqs = requests.filter((r) => r.url.includes("/graphql") && r.body);
+      const body = graphqlReqs[graphqlReqs.length - 1]?.body as Record<string, string>;
+      expect(body.query).toContain("InfrahubIPPrefixPoolGetResource");
+    });
+
+    it("should handle missing mutation result gracefully", async () => {
+      const { client } = createTestClient({});
+
+      const result = await client.allocateNextIpPrefix({
+        resourcePoolId: "pool-3",
+      });
+
+      expect(result.ok).toBe(false);
+      expect(result.node).toBeNull();
     });
   });
 
