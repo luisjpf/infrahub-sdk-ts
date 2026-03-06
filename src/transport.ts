@@ -74,6 +74,8 @@ export class InfrahubTransport {
   private headers: Record<string, string>;
   private accessToken: string = "";
   private refreshToken: string = "";
+  /** Single-flight guard: all concurrent refreshes share this promise. */
+  private refreshPromise: Promise<void> | null = null;
 
   constructor(
     config: InfrahubConfig,
@@ -121,16 +123,10 @@ export class InfrahubTransport {
 
     let response = await this.doRequest("POST", url, payload, headers, timeout);
 
-    // Handle token refresh on 401 "Expired Signature"
-    if (response.status === 401) {
-      const data = response.data as Record<string, unknown> | null;
-      const errors = (data?.errors ?? []) as Array<Record<string, unknown>>;
-      const messages = errors.map((e) => e.message as string);
-      if (messages.includes("Expired Signature") && this.refreshToken) {
-        await this.login(true);
-        headers["Authorization"] = `Bearer ${this.accessToken}`;
-        response = await this.doRequest("POST", url, payload, headers, timeout);
-      }
+    if (this.shouldRefreshToken(response)) {
+      await this.refreshAccessToken();
+      headers["Authorization"] = `Bearer ${this.accessToken}`;
+      response = await this.doRequest("POST", url, payload, headers, timeout);
     }
 
     return response;
@@ -149,19 +145,35 @@ export class InfrahubTransport {
 
     let response = await this.doRequest("GET", url, undefined, headers, timeout);
 
-    // Handle token refresh on 401 "Expired Signature"
-    if (response.status === 401) {
-      const data = response.data as Record<string, unknown> | null;
-      const errors = (data?.errors ?? []) as Array<Record<string, unknown>>;
-      const messages = errors.map((e) => e.message as string);
-      if (messages.includes("Expired Signature") && this.refreshToken) {
-        await this.login(true);
-        headers["Authorization"] = `Bearer ${this.accessToken}`;
-        response = await this.doRequest("GET", url, undefined, headers, timeout);
-      }
+    if (this.shouldRefreshToken(response)) {
+      await this.refreshAccessToken();
+      headers["Authorization"] = `Bearer ${this.accessToken}`;
+      response = await this.doRequest("GET", url, undefined, headers, timeout);
     }
 
     return response;
+  }
+
+  /** Check if a 401 response indicates an expired token that can be refreshed. */
+  private shouldRefreshToken(response: HttpResponse): boolean {
+    if (response.status !== 401 || !this.refreshToken) return false;
+    const data = response.data as Record<string, unknown> | null;
+    const errors = (data?.errors ?? []) as Array<Record<string, unknown>>;
+    const messages = errors.map((e) => e.message as string);
+    return messages.includes("Expired Signature");
+  }
+
+  /**
+   * Refresh the access token with single-flight guard.
+   * Multiple concurrent callers share the same refresh request.
+   */
+  private async refreshAccessToken(): Promise<void> {
+    if (!this.refreshPromise) {
+      this.refreshPromise = this.login(true).finally(() => {
+        this.refreshPromise = null;
+      });
+    }
+    return this.refreshPromise;
   }
 
   /**
