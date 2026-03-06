@@ -20,6 +20,7 @@ export {
 } from "./errors.js";
 
 // Transport
+/** @internal InfrahubTransport is an implementation detail — use InfrahubClient instead. */
 export { InfrahubTransport, FetchHttpClient } from "./transport.js";
 
 // Types
@@ -27,6 +28,7 @@ export type { HttpClient, HttpResponse, HttpRequestOptions, Logger } from "./typ
 export { consoleLogger, toErrorMessage } from "./types.js";
 
 // GraphQL
+/** @internal GraphQL builders are used internally by InfrahubClient. */
 export { GraphQLQuery, GraphQLMutation } from "./graphql/index.js";
 
 // Schema

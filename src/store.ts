@@ -4,9 +4,13 @@ import type { InfrahubNode } from "./node/node.js";
  * In-memory cache for InfrahubNode instances.
  * Indexed by ID for quick lookup.
  * Mirrors Python SDK's `NodeStore`.
+ *
+ * Supports optional maxSize per branch — when exceeded, the oldest entry
+ * (by insertion order) is evicted.
  */
 export class NodeStore {
   private readonly defaultBranch: string;
+  private readonly _maxSize: number;
 
   /** branch → (id → node) */
   private readonly byId: Map<string, Map<string, InfrahubNode>> = new Map();
@@ -14,8 +18,18 @@ export class NodeStore {
   /** branch → (kind+key → node) */
   private readonly byKey: Map<string, Map<string, InfrahubNode>> = new Map();
 
-  constructor(defaultBranch: string) {
+  /**
+   * @param defaultBranch - The default branch name
+   * @param maxSize - Maximum entries per branch (0 = unlimited, default)
+   */
+  constructor(defaultBranch: string, maxSize: number = 0) {
     this.defaultBranch = defaultBranch;
+    this._maxSize = maxSize;
+  }
+
+  /** Maximum entries per branch (0 = unlimited). */
+  get maxSize(): number {
+    return this._maxSize;
   }
 
   /** Store a node in the cache. */
@@ -26,7 +40,11 @@ export class NodeStore {
       if (!this.byId.has(branchName)) {
         this.byId.set(branchName, new Map());
       }
-      this.byId.get(branchName)!.set(node.id, node);
+      const branchMap = this.byId.get(branchName)!;
+      // Delete first so re-insertion moves it to end (newest)
+      branchMap.delete(node.id);
+      branchMap.set(node.id, node);
+      this.evictIfNeeded(branchMap);
     }
 
     if (key) {
@@ -77,6 +95,20 @@ export class NodeStore {
     } else {
       this.byId.clear();
       this.byKey.clear();
+    }
+  }
+
+  /** Evict oldest entries if the branch map exceeds maxSize. */
+  private evictIfNeeded(branchMap: Map<string, InfrahubNode>): void {
+    if (this._maxSize <= 0) return;
+    while (branchMap.size > this._maxSize) {
+      // Map iterates in insertion order; first key is oldest
+      const oldest = branchMap.keys().next().value;
+      if (oldest !== undefined) {
+        branchMap.delete(oldest);
+      } else {
+        break;
+      }
     }
   }
 }

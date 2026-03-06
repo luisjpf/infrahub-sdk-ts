@@ -18,9 +18,14 @@ describe("ProxyHttpClient", () => {
       expect(client.tlsProxyConfig.proxyUrl).toBe("http://proxy:3128");
     });
 
-    it("should store TLS insecure setting", () => {
+    it("should store TLS insecure setting and emit warning", () => {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
       const client = new ProxyHttpClient({ tlsInsecure: true });
       expect(client.tlsProxyConfig.tlsInsecure).toBe(true);
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("tlsInsecure is enabled"),
+      );
+      warnSpy.mockRestore();
     });
 
     it("should store CA file path", () => {

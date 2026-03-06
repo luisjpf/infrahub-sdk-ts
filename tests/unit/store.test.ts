@@ -97,6 +97,46 @@ describe("NodeStore", () => {
     });
   });
 
+  describe("maxSize LRU eviction", () => {
+    it("should default to unlimited (maxSize 0)", () => {
+      const s = new NodeStore("main");
+      expect(s.maxSize).toBe(0);
+    });
+
+    it("should evict oldest entries when maxSize exceeded", () => {
+      const s = new NodeStore("main", 2);
+      s.set(makeNode("a"));
+      s.set(makeNode("b"));
+      s.set(makeNode("c")); // should evict "a"
+
+      expect(s.has("a")).toBe(false);
+      expect(s.has("b")).toBe(true);
+      expect(s.has("c")).toBe(true);
+      expect(s.getAll()).toHaveLength(2);
+    });
+
+    it("should refresh position on re-set", () => {
+      const s = new NodeStore("main", 2);
+      s.set(makeNode("a"));
+      s.set(makeNode("b"));
+      // Re-set "a" moves it to newest
+      s.set(makeNode("a"));
+      s.set(makeNode("c")); // should evict "b" (now oldest)
+
+      expect(s.has("a")).toBe(true);
+      expect(s.has("b")).toBe(false);
+      expect(s.has("c")).toBe(true);
+    });
+
+    it("should not evict when maxSize is 0 (unlimited)", () => {
+      const s = new NodeStore("main", 0);
+      for (let i = 0; i < 100; i++) {
+        s.set(makeNode(`id-${i}`));
+      }
+      expect(s.getAll()).toHaveLength(100);
+    });
+  });
+
   describe("clear", () => {
     it("should clear a specific branch", () => {
       store.set(makeNode("uuid-1"));

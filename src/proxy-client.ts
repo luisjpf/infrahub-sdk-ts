@@ -45,6 +45,12 @@ export class ProxyHttpClient implements HttpClient {
 
   constructor(config: TlsProxyConfig = {}) {
     this.tlsProxyConfig = config;
+    if (config.tlsInsecure) {
+      console.warn(
+        "[infrahub-sdk] WARNING: tlsInsecure is enabled — TLS certificate verification is disabled. " +
+        "This should NEVER be used in production as it allows man-in-the-middle attacks.",
+      );
+    }
   }
 
   async request(options: HttpRequestOptions): Promise<HttpResponse> {
