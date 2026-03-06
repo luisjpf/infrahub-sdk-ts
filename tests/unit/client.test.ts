@@ -4,6 +4,7 @@ import {
   AuthenticationError,
   GraphQLError,
   NodeNotFoundError,
+  ValidationError,
 } from "../../src/errors.js";
 import type { HttpClient, HttpRequestOptions, HttpResponse } from "../../src/types.js";
 import { deviceSchema, siteSchema } from "../fixtures/schemas.js";
@@ -190,15 +191,13 @@ describe("InfrahubClient", () => {
 
       await expect(
         client.get("InfraDevice", { id: "ambiguous" }),
-      ).rejects.toThrow("More than 1 node returned");
+      ).rejects.toThrow(ValidationError);
     });
 
     it("should require at least one filter", async () => {
       const { client } = createTestClient();
 
-      await expect(client.get("InfraDevice")).rejects.toThrow(
-        "At least one filter must be provided",
-      );
+      await expect(client.get("InfraDevice")).rejects.toThrow(ValidationError);
     });
   });
 

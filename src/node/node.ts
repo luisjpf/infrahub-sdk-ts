@@ -1,3 +1,4 @@
+import { ValidationError } from "../errors.js";
 import type { SchemaType } from "../schema/types.js";
 import { getRelationshipByName, isNodeSchema } from "../schema/types.js";
 import { Attribute } from "./attribute.js";
@@ -91,7 +92,7 @@ export class InfrahubNode {
   getAttribute(name: string): Attribute {
     const attr = this._attributes.get(name);
     if (!attr) {
-      throw new Error(`Attribute '${name}' not found on ${this.schema.kind}`);
+      throw new ValidationError(name, `Attribute '${name}' not found on ${this.schema.kind}`);
     }
     return attr;
   }

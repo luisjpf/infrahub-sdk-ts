@@ -5,7 +5,7 @@ import {
   ServerNotResponsiveError,
 } from "./errors.js";
 import type { HttpClient, HttpRequestOptions, HttpResponse, Logger } from "./types.js";
-import { consoleLogger } from "./types.js";
+import { consoleLogger, toErrorMessage } from "./types.js";
 
 /**
  * Default HTTP client implementation using the native `fetch` API.
@@ -46,7 +46,7 @@ export class FetchHttpClient implements HttpClient {
       }
       if (error instanceof TypeError) {
         // fetch throws TypeError for network errors (DNS, connection refused, etc.)
-        throw new ServerNotReachableError(url, (error as Error).message);
+        throw new ServerNotReachableError(url, toErrorMessage(error));
       }
       throw error;
     } finally {

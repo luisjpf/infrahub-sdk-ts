@@ -34,6 +34,16 @@ export interface Logger {
   error(message: string, ...args: unknown[]): void;
 }
 
+/**
+ * Safely extract an error message from an unknown thrown value.
+ * Use this instead of `(error as Error).message` in catch blocks.
+ */
+export function toErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  return String(error);
+}
+
 /** Console-based logger (default). */
 export const consoleLogger: Logger = {
   debug: (msg, ...args) => console.debug(`[infrahub-sdk] ${msg}`, ...args),

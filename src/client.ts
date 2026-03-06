@@ -7,6 +7,7 @@ import {
   GraphQLError,
   NodeNotFoundError,
   URLNotFoundError,
+  ValidationError,
 } from "./errors.js";
 import { GraphQLMutation, GraphQLQuery } from "./graphql/query.js";
 import type { ClientMode, GroupContextProperties } from "./group-context.js";
@@ -214,7 +215,7 @@ export class InfrahubClient {
     }
 
     if (Object.keys(queryFilters).length === 0) {
-      throw new Error("At least one filter must be provided to get()");
+      throw new ValidationError("filters", "At least one filter must be provided to get()");
     }
 
     const results = await this.all(kind, {
@@ -233,7 +234,7 @@ export class InfrahubClient {
     }
 
     if (results.length > 1) {
-      throw new Error("More than 1 node returned");
+      throw new ValidationError("get", "More than 1 node returned");
     }
 
     return results[0]!;

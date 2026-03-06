@@ -24,7 +24,7 @@ export { InfrahubTransport, FetchHttpClient } from "./transport.js";
 
 // Types
 export type { HttpClient, HttpResponse, HttpRequestOptions, Logger } from "./types.js";
-export { consoleLogger } from "./types.js";
+export { consoleLogger, toErrorMessage } from "./types.js";
 
 // GraphQL
 export { GraphQLQuery, GraphQLMutation } from "./graphql/index.js";

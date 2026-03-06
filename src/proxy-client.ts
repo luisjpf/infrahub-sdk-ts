@@ -3,6 +3,7 @@ import {
   ServerNotResponsiveError,
 } from "./errors.js";
 import type { HttpClient, HttpRequestOptions, HttpResponse } from "./types.js";
+import { toErrorMessage } from "./types.js";
 
 /**
  * TLS/proxy configuration for HTTP clients.
@@ -88,7 +89,7 @@ export class ProxyHttpClient implements HttpClient {
         throw new ServerNotResponsiveError(url, timeout);
       }
       if (error instanceof TypeError) {
-        throw new ServerNotReachableError(url, (error as Error).message);
+        throw new ServerNotReachableError(url, toErrorMessage(error));
       }
       throw error;
     } finally {
@@ -101,12 +102,16 @@ export class ProxyHttpClient implements HttpClient {
   /** Return the cached dispatcher, creating it lazily on first call. */
   private getDispatcher(): Promise<object | undefined> {
     if (!this._dispatcherPromise) {
-      this._dispatcherPromise = this.createDispatcher().catch((err) => {
-        this._dispatcherPromise = undefined; // allow retry on next request
-        throw err;
-      });
+      const promise: Promise<object | undefined> = this.createDispatcher().then(
+        (result) => result as object | undefined,
+        (err: unknown) => {
+          this._dispatcherPromise = undefined; // allow retry on next request
+          throw err;
+        },
+      );
+      this._dispatcherPromise = promise;
     }
-    return this._dispatcherPromise;
+    return this._dispatcherPromise!;
   }
 
   /**
