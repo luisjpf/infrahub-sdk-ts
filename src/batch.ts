@@ -58,7 +58,7 @@ export class InfrahubBatch {
           results[index] = { result, label: task.label };
         } catch (error) {
           if (this._returnExceptions) {
-            results[index] = { error: error as Error, label: task.label };
+            results[index] = { error: error instanceof Error ? error : new Error(String(error)), label: task.label };
           } else {
             throw error;
           }

@@ -210,6 +210,52 @@ describe("InfrahubTransport", () => {
     });
   });
 
+  describe("token refresh single-flight guard", () => {
+    it("should only call login once when concurrent requests get 401", async () => {
+      let loginCallCount = 0;
+      let graphqlCallCount = 0;
+      const handler = vi.fn().mockImplementation(async (opts: HttpRequestOptions) => {
+        if (opts.url.includes("/api/auth/login")) {
+          loginCallCount++;
+          return okResponse({ access_token: "access1", refresh_token: "refresh1" });
+        }
+        if (opts.url.includes("/api/auth/refresh")) {
+          loginCallCount++;
+          // Simulate slow refresh
+          await new Promise((r) => setTimeout(r, 10));
+          return okResponse({ access_token: "access-refreshed" });
+        }
+        graphqlCallCount++;
+        // First two GQL calls fail with expired, subsequent succeed
+        if (graphqlCallCount <= 2) {
+          return {
+            status: 401,
+            data: { errors: [{ message: "Expired Signature" }] },
+            headers: {},
+          };
+        }
+        return okResponse({ data: { ok: true } });
+      });
+
+      const config = createConfig({ username: "admin", password: "secret" });
+      const transport = new InfrahubTransport(config, createMockHttpClient(handler));
+      await transport.login();
+
+      // Fire two concurrent requests that both hit 401
+      const [r1, r2] = await Promise.all([
+        transport.post("http://localhost:8000/graphql", { q: 1 }),
+        transport.post("http://localhost:8000/graphql", { q: 2 }),
+      ]);
+
+      // Both should succeed
+      expect(r1.status).toBe(200);
+      expect(r2.status).toBe(200);
+      // Only ONE refresh should have been issued (single-flight guard)
+      // loginCallCount = 1 (initial) + 1 (single refresh)
+      expect(loginCallCount).toBe(2);
+    });
+  });
+
   describe("retry logic", () => {
     it("should not retry by default", async () => {
       const handler = vi.fn().mockRejectedValue(
@@ -221,6 +267,86 @@ describe("InfrahubTransport", () => {
       await expect(
         transport.post("http://localhost:8000/graphql", {}),
       ).rejects.toThrow(ServerNotReachableError);
+
+      expect(handler).toHaveBeenCalledOnce();
+    });
+
+    it("should retry on ServerNotReachableError when retryOnFailure is true", async () => {
+      let attempt = 0;
+      const handler = vi.fn().mockImplementation(async () => {
+        attempt++;
+        if (attempt <= 2) {
+          throw new ServerNotReachableError("http://localhost:8000");
+        }
+        return okResponse({ data: { ok: true } });
+      });
+
+      const config = createConfig({
+        retryOnFailure: true,
+        retryDelay: 1,
+        retryBackoff: "constant",
+        retryJitter: false,
+        maxRetryDuration: 30,
+      });
+      const transport = new InfrahubTransport(
+        config,
+        createMockHttpClient(handler),
+        { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+      );
+
+      const response = await transport.post("http://localhost:8000/graphql", {});
+
+      expect(response.status).toBe(200);
+      expect(attempt).toBe(3); // failed twice, succeeded on third
+    });
+
+    it("should stop retrying after maxRetryDuration is exceeded", async () => {
+      const handler = vi.fn().mockRejectedValue(
+        new ServerNotReachableError("http://localhost:8000"),
+      );
+
+      const config = createConfig({
+        retryOnFailure: true,
+        retryDelay: 1,
+        retryJitter: false,
+        maxRetryDuration: 1, // very short — will be exceeded quickly
+      });
+
+      // Mock Date.now to control timing
+      let time = 0;
+      const originalNow = Date.now;
+      vi.spyOn(Date, "now").mockImplementation(() => {
+        time += 2000; // each call advances 2 seconds
+        return time;
+      });
+
+      const transport = new InfrahubTransport(
+        config,
+        createMockHttpClient(handler),
+        { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+      );
+
+      await expect(
+        transport.post("http://localhost:8000/graphql", {}),
+      ).rejects.toThrow(ServerNotReachableError);
+
+      Date.now = originalNow;
+      vi.restoreAllMocks();
+    });
+
+    it("should not retry non-network errors", async () => {
+      const handler = vi.fn().mockRejectedValue(new Error("some other error"));
+
+      const config = createConfig({
+        retryOnFailure: true,
+        retryDelay: 1,
+        maxRetryDuration: 30,
+      });
+      const transport = new InfrahubTransport(config, createMockHttpClient(handler));
+
+      await expect(
+        transport.post("http://localhost:8000/graphql", {}),
+      ).rejects.toThrow("some other error");
 
       expect(handler).toHaveBeenCalledOnce();
     });
@@ -269,7 +395,7 @@ describe("InfrahubTransport", () => {
       expect(transport.computeRetryDelay(3)).toBe(30000);
     });
 
-    it("should add jitter when enabled", () => {
+    it("should add jitter when enabled (deterministic via stubbed Math.random)", () => {
       const config = createConfig({
         retryBackoff: "constant",
         retryDelay: 10,
@@ -277,21 +403,22 @@ describe("InfrahubTransport", () => {
       });
       const transport = new InfrahubTransport(config, createMockHttpClient(vi.fn()));
 
-      // Run multiple times and check variance
-      const delays = new Set<number>();
-      for (let i = 0; i < 20; i++) {
-        delays.add(transport.computeRetryDelay(0));
-      }
+      // Stub Math.random to return deterministic values
+      const randomSpy = vi.spyOn(Math, "random");
 
-      // With jitter, we should get different values
-      // With +/- 25%, values should be in range [7500, 12500]
-      for (const delay of delays) {
-        expect(delay).toBeGreaterThanOrEqual(7500);
-        expect(delay).toBeLessThanOrEqual(12500);
-      }
+      // Math.random() = 0.0 → jitter factor = 0.75 → 10000 * 0.75 = 7500
+      randomSpy.mockReturnValueOnce(0.0);
+      expect(transport.computeRetryDelay(0)).toBe(7500);
 
-      // Very unlikely to get all same values with random jitter
-      expect(delays.size).toBeGreaterThan(1);
+      // Math.random() = 0.5 → jitter factor = 1.0 → 10000 * 1.0 = 10000
+      randomSpy.mockReturnValueOnce(0.5);
+      expect(transport.computeRetryDelay(0)).toBe(10000);
+
+      // Math.random() = 1.0 → jitter factor = 1.25 → 10000 * 1.25 = 12500
+      randomSpy.mockReturnValueOnce(1.0);
+      expect(transport.computeRetryDelay(0)).toBe(12500);
+
+      randomSpy.mockRestore();
     });
 
     it("should not add jitter when disabled", () => {

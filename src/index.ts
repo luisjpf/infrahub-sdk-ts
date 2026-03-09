@@ -1,5 +1,6 @@
 // Main client
 export { InfrahubClient } from "./client.js";
+export type { GraphQLExecuteOptions } from "./client.js";
 
 // Configuration
 export type { InfrahubConfig, InfrahubConfigInput } from "./config.js";
@@ -20,13 +21,15 @@ export {
 } from "./errors.js";
 
 // Transport
+/** @internal InfrahubTransport is an implementation detail — use InfrahubClient instead. */
 export { InfrahubTransport, FetchHttpClient } from "./transport.js";
 
 // Types
 export type { HttpClient, HttpResponse, HttpRequestOptions, Logger } from "./types.js";
-export { consoleLogger } from "./types.js";
+export { consoleLogger, toErrorMessage } from "./types.js";
 
 // GraphQL
+/** @internal GraphQL builders are used internally by InfrahubClient. */
 export { GraphQLQuery, GraphQLMutation } from "./graphql/index.js";
 
 // Schema
@@ -53,6 +56,7 @@ export type {
   SchemaCheckResponse,
   SchemaExport,
   NamespaceExport,
+  SchemaTransport,
 } from "./schema/index.js";
 
 // Node

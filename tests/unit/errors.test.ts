@@ -83,24 +83,20 @@ describe("GraphQLError", () => {
     expect(err.name).toBe("GraphQLError");
   });
 
-  it("should truncate long queries in the message to 200 characters", () => {
+  it("should not include query text in the error message", () => {
     const longQuery = "query { " + "a".repeat(300) + " }";
-    expect(longQuery.length).toBeGreaterThan(200);
-
     const err = new GraphQLError([{ message: "error" }], longQuery);
-    // The query preview should be truncated to 200 chars + "..."
-    expect(err.message).toContain("...");
-    // The full query should be stored in the property
+    // Message should NOT contain the query text (security: avoid leaking query content)
+    expect(err.message).not.toContain("query {");
+    // The full query should be stored in the property for debugging
     expect(err.query).toBe(longQuery);
-    // Message should not contain the full query
-    expect(err.message.length).toBeLessThan(longQuery.length + 100);
   });
 
-  it("should not truncate short queries", () => {
+  it("should keep query accessible as a property", () => {
     const shortQuery = "{ test }";
     const err = new GraphQLError([{ message: "error" }], shortQuery);
-    expect(err.message).toContain("{ test }");
-    expect(err.message).not.toContain("...");
+    expect(err.message).not.toContain("{ test }");
+    expect(err.query).toBe(shortQuery);
   });
 
   it("should handle errors without message property", () => {
@@ -110,9 +106,9 @@ describe("GraphQLError", () => {
     expect(err.message).toContain('{"code":"UNKNOWN"}');
   });
 
-  it("should show 'unknown' when no query provided", () => {
+  it("should work when no query provided", () => {
     const err = new GraphQLError([{ message: "error" }]);
-    expect(err.message).toContain("(query: unknown)");
+    expect(err.message).toBe("GraphQL error: error");
     expect(err.query).toBeUndefined();
   });
 
@@ -122,16 +118,16 @@ describe("GraphQLError", () => {
     expect(err.variables).toBe(vars);
   });
 
-  it("should handle exactly 200-character query without truncation", () => {
+  it("should handle exactly 200-character query", () => {
     const exactQuery = "x".repeat(200);
     const err = new GraphQLError([{ message: "error" }], exactQuery);
-    expect(err.message).toContain(exactQuery);
-    expect(err.message).not.toContain("...");
+    expect(err.query).toBe(exactQuery);
+    expect(err.message).not.toContain(exactQuery);
   });
 
   it("should handle empty errors array", () => {
     const err = new GraphQLError([], "{ test }");
-    expect(err.message).toBe("GraphQL error:  (query: { test })");
+    expect(err.message).toBe("GraphQL error: ");
     expect(err.errors).toEqual([]);
   });
 });

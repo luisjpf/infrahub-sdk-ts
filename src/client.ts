@@ -7,6 +7,7 @@ import {
   GraphQLError,
   NodeNotFoundError,
   URLNotFoundError,
+  ValidationError,
 } from "./errors.js";
 import { GraphQLMutation, GraphQLQuery } from "./graphql/query.js";
 import type { ClientMode, GroupContextProperties } from "./group-context.js";
@@ -24,6 +25,15 @@ import { isNodeSchema } from "./schema/types.js";
 import { NodeStore } from "./store.js";
 import { InfrahubTransport } from "./transport.js";
 import type { HttpClient, Logger } from "./types.js";
+
+/** Options for the object-form of executeGraphQL. */
+export interface GraphQLExecuteOptions {
+  query: string;
+  variables?: Record<string, unknown>;
+  tracker?: string;
+  branch?: string;
+  timeout?: number;
+}
 
 /**
  * Main client for interacting with the Infrahub API.
@@ -214,7 +224,7 @@ export class InfrahubClient {
     }
 
     if (Object.keys(queryFilters).length === 0) {
-      throw new Error("At least one filter must be provided to get()");
+      throw new ValidationError("filters", "At least one filter must be provided to get()");
     }
 
     const results = await this.all(kind, {
@@ -233,7 +243,7 @@ export class InfrahubClient {
     }
 
     if (results.length > 1) {
-      throw new Error("More than 1 node returned");
+      throw new ValidationError("get", "More than 1 node returned");
     }
 
     return results[0]!;
@@ -421,14 +431,29 @@ export class InfrahubClient {
 
   /**
    * Execute a raw GraphQL query or mutation.
+   *
+   * Supports two call styles:
+   * - Positional: `executeGraphQL(query, variables?, tracker?, branch?, timeout?)`
+   * - Options object: `executeGraphQL({ query, variables?, tracker?, branch?, timeout? })`
    */
   async executeGraphQL(
-    query: string,
+    queryOrOptions: string | GraphQLExecuteOptions,
     variables?: Record<string, unknown>,
     tracker?: string,
     branchName?: string,
     timeout?: number,
   ): Promise<Record<string, unknown>> {
+    let query: string;
+    if (typeof queryOrOptions === "object") {
+      query = queryOrOptions.query;
+      variables = queryOrOptions.variables;
+      tracker = queryOrOptions.tracker;
+      branchName = queryOrOptions.branch;
+      timeout = queryOrOptions.timeout;
+    } else {
+      query = queryOrOptions;
+    }
+
     const branch = branchName ?? this.defaultBranch;
     const url = this.transport.buildGraphQLUrl(branch);
 

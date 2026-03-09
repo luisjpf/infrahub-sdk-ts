@@ -3,7 +3,7 @@
 [![CI](https://github.com/opsmill/infrahub-sdk-ts/actions/workflows/ci.yml/badge.svg)](https://github.com/opsmill/infrahub-sdk-ts/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/infrahub-sdk)](https://www.npmjs.com/package/infrahub-sdk)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Node.js](https://img.shields.io/badge/node-%3E%3D18-brightgreen)](https://nodejs.org)
+[![Node.js](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](https://nodejs.org)
 
 TypeScript SDK for [Infrahub](https://github.com/opsmill/infrahub) — an infrastructure management platform that provides a unified API for network and infrastructure data.
 
@@ -109,6 +109,8 @@ npx infrahub-sdk --help
 | `codegen -s <file> [-o <dir>]` | Generate TypeScript types from schema JSON |
 | `schema export [-a <url>] [-o <file>]` | Export schema from a running Infrahub server |
 
+> **Tip:** Prefer the `INFRAHUB_API_TOKEN` environment variable over `--api-token` to avoid exposing tokens in shell history.
+
 ### Examples
 
 ```bash
@@ -171,7 +173,7 @@ const client = new InfrahubClient({
 
   // TLS / proxy
   proxyUrl: "http://proxy:3128",
-  tlsInsecure: false,
+  tlsInsecure: false,               // WARNING: never enable in production
   tlsCaFile: "/path/to/ca.pem",
 });
 ```
