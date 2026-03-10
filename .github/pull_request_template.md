@@ -12,7 +12,7 @@
 
 - [ ] I have read and understand the changes in this PR
 - [ ] Tests pass locally (`npm test`)
-- [ ] Type-checking passes (`npm run lint`)
+- [ ] Type-checking passes (`npm run lint` — runs `tsc --noEmit`)
 - [ ] Build succeeds (`npm run build`)
 - [ ] New/changed behavior is covered by tests
 - [ ] Documentation is updated if the public API or CLI changed

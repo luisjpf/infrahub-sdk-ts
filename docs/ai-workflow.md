@@ -26,7 +26,7 @@ project overview → tech spec → quality spec → tasks → PRs → review PR 
 
 8. **Human review** — A human maintainer gives final approval. This step is never skipped.
 
-9. **Merge** — Squash or merge per the project's convention.
+9. **Merge** — Use squash-and-merge for single-purpose PRs to keep `main` history linear. Use a regular merge commit only when preserving individual commits adds meaningful context (e.g., multi-step refactors).
 
 ## Where Things Live
 

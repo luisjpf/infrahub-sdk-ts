@@ -30,6 +30,9 @@ When AI tools contributed meaningfully to a PR (beyond autocomplete or trivial s
 
 1. Check the AI disclosure box in the PR template.
 2. Briefly note which parts were AI-assisted.
-3. Include `Co-Authored-By` trailers in commits where applicable.
+3. Include `Co-Authored-By` trailers in commits where applicable, for example:
+   ```
+   Co-Authored-By: Claude <noreply@anthropic.com>
+   ```
 
 This is about transparency, not gatekeeping. AI-assisted PRs are welcome and go through the same review process as any other PR.
