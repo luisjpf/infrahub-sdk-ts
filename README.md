@@ -10,7 +10,7 @@ TypeScript SDK for [Infrahub](https://github.com/opsmill/infrahub) — an infras
 ## Installation
 
 ```bash
-npm install github:opsmill/infrahub-sdk-ts
+npm install github:luisjpf/infrahub-sdk-ts
 ```
 
 > **Note:** The npm package is not yet published. Once available on npm, install with `npm install infrahub-sdk` instead.
