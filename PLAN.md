@@ -224,7 +224,7 @@ infrahub-sdk-ts/
 - [x] `clone()` for branch-scoped clients
 - [x] Batch operations
 - [x] Query include/exclude fields
-- [ ] Prefetch relationships
+- [x] Prefetch relationships
 
 ### Phase 3 — Advanced
 - [x] Tracking mode (group context)

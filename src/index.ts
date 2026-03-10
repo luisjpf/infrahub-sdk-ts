@@ -11,6 +11,7 @@ export {
   InfrahubError,
   ServerNotReachableError,
   ServerNotResponsiveError,
+  HttpError,
   GraphQLError,
   AuthenticationError,
   NodeNotFoundError,

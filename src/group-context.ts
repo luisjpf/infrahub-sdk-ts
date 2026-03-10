@@ -1,3 +1,5 @@
+import { fnv1aHash } from "./hash.js";
+
 /**
  * Group context for tracking mode.
  *
@@ -270,11 +272,5 @@ function renderMutationData(
 function dictHash(params: Record<string, string>): string {
   const sorted = Object.entries(params).sort(([a], [b]) => a.localeCompare(b));
   const str = sorted.map(([k, v]) => `${k}=${v}`).join("&");
-
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < str.length; i++) {
-    hash ^= str.charCodeAt(i);
-    hash = (hash * 0x01000193) | 0;
-  }
-  return (hash >>> 0).toString(16).padStart(8, "0");
+  return fnv1aHash(str);
 }

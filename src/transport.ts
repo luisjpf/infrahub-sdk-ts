@@ -289,7 +289,8 @@ export class InfrahubTransport {
 
     if (this.config.retryJitter) {
       // Add +/- 25% jitter
-      const jitter = delay * 0.25 * (2 * Math.random() - 1);
+      const JITTER_FACTOR = 0.25;
+      const jitter = delay * JITTER_FACTOR * (2 * Math.random() - 1);
       delay = Math.max(0, delay + jitter);
     }
 
