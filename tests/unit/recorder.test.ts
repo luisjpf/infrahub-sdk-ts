@@ -238,6 +238,21 @@ describe("JSONPlayback", () => {
       /No recording found for GET/,
     );
   });
+
+  it("should throw InfrahubError when recording contains invalid JSON", async () => {
+    const request: HttpRequestOptions = {
+      method: "GET",
+      url: "http://localhost:8000/corrupt",
+    };
+
+    // Write invalid JSON to the storage
+    const filename = generateRequestFilename(request);
+    storage.write(filename, "this is not valid json{{{");
+
+    await expect(playback.request(request)).rejects.toThrow(
+      /Invalid JSON in recording file/,
+    );
+  });
 });
 
 describe("RecordingHttpClient", () => {

@@ -203,11 +203,12 @@ export class SchemaManager {
     const url = `${this.buildBaseUrl()}/api/schema/load?branch=${encodeURIComponent(branchName)}`;
 
     // Schema loads can take a while — enforce a 2-minute minimum timeout
+    const SCHEMA_LOAD_TIMEOUT_SECONDS = 120;
     const response = await this.transport.post(
       url,
       { schemas },
       undefined,
-      120,
+      SCHEMA_LOAD_TIMEOUT_SECONDS,
     );
 
     if (response.status === 401 || response.status === 403) {

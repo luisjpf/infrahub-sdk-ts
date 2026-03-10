@@ -1,3 +1,5 @@
+import { InfrahubError } from "./errors.js";
+import { fnv1aHash } from "./hash.js";
 import type { HttpClient, HttpRequestOptions, HttpResponse } from "./types.js";
 
 /**
@@ -38,7 +40,7 @@ export class MemoryRecorderStorage implements RecorderStorage {
   read(filename: string): string {
     const data = this.entries.get(filename);
     if (data === undefined) {
-      throw new Error(`Recording not found: ${filename}`);
+      throw new InfrahubError(`Recording not found: ${filename}`);
     }
     return data;
   }
@@ -110,13 +112,19 @@ export class JSONPlayback implements HttpClient {
 
     const exists = await this.storage.exists(filename);
     if (!exists) {
-      throw new Error(
+      throw new InfrahubError(
         `No recording found for ${options.method} ${options.url} (expected: ${filename})`,
       );
     }
 
     const raw = await this.storage.read(filename);
-    const entry = JSON.parse(raw) as RecordedEntry;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      throw new InfrahubError(`Invalid JSON in recording file: ${filename}`);
+    }
+    const entry = parsed as RecordedEntry;
 
     let data: unknown;
     try {
@@ -158,21 +166,9 @@ export class RecordingHttpClient implements HttpClient {
  * Format: {method}-{urlHash}[-{bodyHash}].json
  */
 export function generateRequestFilename(request: HttpRequestOptions): string {
-  const urlHash = simpleHash(request.url);
+  const urlHash = fnv1aHash(request.url);
   const bodyStr = request.body !== undefined ? JSON.stringify(request.body) : "";
-  const bodyHash = bodyStr ? `-${simpleHash(bodyStr)}` : "";
+  const bodyHash = bodyStr ? `-${fnv1aHash(bodyStr)}` : "";
   return `${request.method.toLowerCase()}-${urlHash}${bodyHash}.json`;
 }
 
-/**
- * Simple string hash function (FNV-1a variant).
- * Returns a hex string. Deterministic and fast, not cryptographic.
- */
-function simpleHash(input: string): string {
-  let hash = 0x811c9dc5; // FNV offset basis
-  for (let i = 0; i < input.length; i++) {
-    hash ^= input.charCodeAt(i);
-    hash = (hash * 0x01000193) | 0; // FNV prime, keep 32-bit
-  }
-  return (hash >>> 0).toString(16).padStart(8, "0");
-}

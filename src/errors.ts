@@ -113,6 +113,18 @@ export class ValidationError extends InfrahubError {
   }
 }
 
+export class HttpError extends InfrahubError {
+  readonly status: number;
+  readonly url: string;
+
+  constructor(status: number, url: string, message?: string) {
+    super(message ?? `HTTP ${status} error from ${url}`);
+    this.name = "HttpError";
+    this.status = status;
+    this.url = url;
+  }
+}
+
 export class URLNotFoundError extends InfrahubError {
   readonly url: string;
 

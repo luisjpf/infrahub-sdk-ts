@@ -5,6 +5,7 @@ import { createConfig } from "./config.js";
 import {
   AuthenticationError,
   GraphQLError,
+  HttpError,
   NodeNotFoundError,
   URLNotFoundError,
   ValidationError,
@@ -21,10 +22,11 @@ import {
 import { InfrahubNode } from "./node/node.js";
 import { ObjectStore } from "./object-store.js";
 import { SchemaManager } from "./schema/manager.js";
+import type { RelationshipSchema } from "./schema/types.js";
 import { isNodeSchema } from "./schema/types.js";
 import { NodeStore } from "./store.js";
 import { InfrahubTransport } from "./transport.js";
-import type { HttpClient, Logger } from "./types.js";
+import type { HttpClient, HttpResponse, Logger } from "./types.js";
 
 /** Options for the object-form of executeGraphQL. */
 export interface GraphQLExecuteOptions {
@@ -263,22 +265,28 @@ export class InfrahubClient {
       filters?: Record<string, unknown>;
       populateStore?: boolean;
       includeRelationships?: boolean;
+      prefetchRelationships?: boolean;
       partialMatch?: boolean;
     } = {},
   ): Promise<InfrahubNode[]> {
     const {
       branch, timeout, offset, limit, filters,
-      populateStore = true, includeRelationships, partialMatch,
+      populateStore = true, includeRelationships,
+      prefetchRelationships, partialMatch,
     } = options;
     const branchName = branch ?? this.defaultBranch;
     const schema = await this.schema.get(kind, branchName);
 
     // If explicit offset/limit supplied, do a single-page fetch
     if (offset !== undefined || limit !== undefined) {
-      return this.fetchPage(schema, branchName, {
+      const nodes = await this.fetchPage(schema, branchName, {
         filters, offset, limit, timeout, populateStore,
         includeRelationships, partialMatch,
       });
+      if (prefetchRelationships) {
+        await this.prefetchRelatedNodes(nodes, branchName, timeout);
+      }
+      return nodes;
     }
 
     // Automatic pagination: fetch all pages
@@ -310,6 +318,10 @@ export class InfrahubClient {
       }
     }
 
+    if (prefetchRelationships) {
+      await this.prefetchRelatedNodes(allNodes, branchName, timeout);
+    }
+
     return allNodes;
   }
 
@@ -336,12 +348,13 @@ export class InfrahubClient {
       populateStore?: boolean;
       partialMatch?: boolean;
       includeRelationships?: boolean;
+      prefetchRelationships?: boolean;
       [key: string]: unknown;
     } = {},
   ): Promise<InfrahubNode[]> {
     const {
       branch, timeout, offset, limit, populateStore = true,
-      partialMatch, includeRelationships,
+      partialMatch, includeRelationships, prefetchRelationships,
       ...filterArgs
     } = options;
     const branchName = branch ?? this.defaultBranch;
@@ -357,6 +370,7 @@ export class InfrahubClient {
       populateStore,
       partialMatch,
       includeRelationships,
+      prefetchRelationships,
     });
   }
 
@@ -469,22 +483,7 @@ export class InfrahubClient {
 
     const response = await this.transport.post(url, payload, extraHeaders, timeout);
 
-    // Handle HTTP errors
-    if (response.status === 401 || response.status === 403) {
-      const data = response.data as Record<string, unknown> | null;
-      const errors = ((data?.errors ?? []) as Array<Record<string, unknown>>).map(
-        (e) => (e.message as string) ?? "",
-      );
-      throw new AuthenticationError(errors.join(" | "));
-    }
-
-    if (response.status === 404) {
-      throw new URLNotFoundError(url);
-    }
-
-    if (response.status >= 400) {
-      throw new Error(`HTTP ${response.status} error from ${url}`);
-    }
+    this.throwOnHttpError(response, url);
 
     const data = response.data as Record<string, unknown>;
 
@@ -660,6 +659,86 @@ export class InfrahubClient {
       node.branch,
       timeout,
     );
+  }
+
+  /** Throw an appropriate error for non-2xx HTTP responses. */
+  private throwOnHttpError(response: HttpResponse, url: string): void {
+    if (response.status === 401 || response.status === 403) {
+      const data = response.data as Record<string, unknown> | null;
+      const errors = ((data?.errors ?? []) as Array<Record<string, unknown>>).map(
+        (e) => (e.message as string) ?? "",
+      );
+      throw new AuthenticationError(errors.join(" | "));
+    }
+
+    if (response.status === 404) {
+      throw new URLNotFoundError(url);
+    }
+
+    if (response.status >= 400) {
+      throw new HttpError(response.status, url);
+    }
+  }
+
+  /**
+   * Prefetch related nodes for a list of nodes.
+   * Collects all peer IDs from cardinality-one relationships, fetches them
+   * in bulk by kind, and populates the store so they're available for lookup.
+   */
+  private async prefetchRelatedNodes(
+    nodes: InfrahubNode[],
+    branchName: string,
+    timeout?: number,
+  ): Promise<void> {
+    // Collect peer IDs grouped by kind from all relationship schemas
+    const peerIdsByKind = new Map<string, Set<string>>();
+    const trackPeer = (kind: string, id: string) => {
+      let ids = peerIdsByKind.get(kind);
+      if (!ids) {
+        ids = new Set();
+        peerIdsByKind.set(kind, ids);
+      }
+      ids.add(id);
+    };
+
+    for (const node of nodes) {
+      for (const relSchema of node.schema.relationships as RelationshipSchema[]) {
+        if (relSchema.cardinality === "one") {
+          const rel = node.getRelatedNode(relSchema.name);
+          if (rel?.id && !this.store.has(rel.id, branchName)) {
+            trackPeer(relSchema.peer, rel.id);
+          }
+        } else {
+          const mgr = node.getRelationshipManager(relSchema.name);
+          if (mgr) {
+            for (const peerId of mgr.peerIds) {
+              if (!this.store.has(peerId, branchName)) {
+                trackPeer(relSchema.peer, peerId);
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Fetch each kind in parallel.
+    // IMPORTANT: prefetchRelationships must be false (or omitted) here to
+    // prevent infinite recursion — we only prefetch one level deep.
+    const fetches: Promise<void>[] = [];
+    for (const [kind, ids] of peerIdsByKind) {
+      if (ids.size === 0) continue;
+      fetches.push(
+        this.all(kind, {
+          branch: branchName,
+          timeout,
+          filters: { ids: [...ids] },
+          populateStore: true,
+          prefetchRelationships: false,
+        }).then(() => undefined),
+      );
+    }
+
+    await Promise.all(fetches);
   }
 }
 
