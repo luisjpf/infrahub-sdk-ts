@@ -1,11 +1,11 @@
 # infrahub-sdk
 
-[![CI](https://github.com/opsmill/infrahub-sdk-ts/actions/workflows/ci.yml/badge.svg)](https://github.com/opsmill/infrahub-sdk-ts/actions/workflows/ci.yml)
+[![CI](https://github.com/luisjpf/infrahub-sdk-ts/actions/workflows/ci.yml/badge.svg)](https://github.com/luisjpf/infrahub-sdk-ts/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/infrahub-sdk)](https://www.npmjs.com/package/infrahub-sdk)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](https://nodejs.org)
 
-TypeScript SDK for [Infrahub](https://github.com/opsmill/infrahub) — an infrastructure management platform that provides a unified API for network and infrastructure data.
+TypeScript SDK for [Infrahub](https://github.com/opsmill/infrahub) — an infrastructure management platform that provides a unified API for network and infrastructure data. Inspired by the [Infrahub Python SDK](https://github.com/opsmill/infrahub) by OpsMill.
 
 ## Installation
 
