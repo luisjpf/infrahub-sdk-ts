@@ -106,8 +106,8 @@ npx infrahub-sdk --help
 
 | Command | Description |
 |---------|-------------|
-| `codegen -s <file> [-o <dir>]` | Generate TypeScript types from schema JSON |
-| `schema export [-a <url>] [-o <file>]` | Export schema from a running Infrahub server |
+| `codegen -s <file> [-o <dir>] [--no-generics] [--header <text>]` | Generate TypeScript types from schema JSON |
+| `schema export [-a <url>] [-t <token>] [-b <branch>] [-o <file>] [--namespaces <ns...>]` | Export schema from a running Infrahub server |
 
 > **Tip:** Prefer the `INFRAHUB_API_TOKEN` environment variable over `--api-token` to avoid exposing tokens in shell history.
 
@@ -130,6 +130,18 @@ npx infrahub-sdk codegen \
   --schema schema.json \
   --output src/generated \
   --no-generics
+
+# Export only specific namespaces
+npx infrahub-sdk schema export \
+  --address http://localhost:8000 \
+  --output schema.json \
+  --namespaces Infra Builtin
+
+# Add a custom header to generated files
+npx infrahub-sdk codegen \
+  --schema schema.json \
+  --output src/generated \
+  --header "Auto-generated — do not edit"
 ```
 
 ## Features
@@ -155,6 +167,8 @@ const client = new InfrahubClient({
   // Connection
   address: "http://localhost:8000",   // or INFRAHUB_ADDRESS env var
   apiToken: "your-token",            // or INFRAHUB_API_TOKEN env var
+  username: "admin",                 // alternative: password-based auth
+  password: "secret",                // must be set together with username
 
   // Branch
   defaultBranch: "main",
@@ -170,6 +184,7 @@ const client = new InfrahubClient({
   retryBackoff: "exponential",       // "constant" | "exponential"
   retryMaxDelay: 60,
   retryJitter: true,
+  maxRetryDuration: 300,             // max seconds to keep retrying
 
   // TLS / proxy
   proxyUrl: "http://proxy:3128",
