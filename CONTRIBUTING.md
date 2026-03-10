@@ -61,9 +61,25 @@ npm run lint           # TypeScript type-checking (tsc --noEmit)
 - Prefer named exports over default exports.
 - Keep dependencies minimal — add a new dependency only when clearly justified.
 
+## AI-Assisted Contributions
+
+AI tools (Claude, Copilot, ChatGPT, etc.) are welcome in this project. See [AI_POLICY.md](./AI_POLICY.md) for full details. The short version:
+
+- **Disclose it.** Check the AI disclosure box in the PR template and note which parts were AI-assisted.
+- **Own it.** You are responsible for understanding and standing behind AI-generated code.
+- **Validate it.** AI output must pass the same checks as human code:
+  - Tests pass (`npm test`)
+  - Types check (`npm run lint`)
+  - Build succeeds (`npm run build`)
+  - New behavior has test coverage
+  - No secrets, credentials, or `.env` values in commits
+- **Review it.** AI-assisted PRs go through the same review process. No shortcuts.
+
+For the full development workflow including specs and iteration cycles, see [docs/ai-workflow.md](./docs/ai-workflow.md).
+
 ## Reporting Issues
 
-- Use [GitHub Issues](https://github.com/opsmill/infrahub-sdk-ts/issues) for bug reports and feature requests.
+- Use [GitHub Issues](https://github.com/luisjpf/infrahub-sdk-ts/issues) for bug reports and feature requests.
 - Include reproduction steps, expected behavior, and actual behavior.
 - For security vulnerabilities, see [SECURITY.md](./SECURITY.md).
 
