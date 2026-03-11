@@ -4,7 +4,7 @@
 
 The infrahub-sdk team takes security issues seriously. We appreciate your efforts to responsibly disclose your findings.
 
-To report a security vulnerability, please email **security@opsmill.com** with:
+To report a security vulnerability, please email **luis.j245@gmail.com** with:
 
 - A description of the vulnerability
 - Steps to reproduce the issue
